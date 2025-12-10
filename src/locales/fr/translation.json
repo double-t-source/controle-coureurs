@@ -1,0 +1,27 @@
+{
+    "titleSelectEvent": "Sélection de l'évènement",
+    "event": "Évènement",
+    "race": "Course / Épreuve",
+    "marshal": "Commissaire",
+    "location": "Lieu de contrôle",
+    "start": "Commencer",
+    "lockedEvent": "Cet évènement est verrouillé. La saisie est désactivée.",
+    "bib": "Numéro de dossard",
+    "ok": "OK",
+    "ko": "KO",
+    "missingGear": "Matériel manquant",
+    "other": "Autre (commentaire)",
+    "comment": "Commentaire (facultatif)",
+    "send": "Envoyer",
+    "last10": "10 derniers dossards contrôlés",
+    "alreadyAt": "Déjà contrôlé à {{time}}",
+    "saved": "✅ Enregistré",
+    "clear": "Effacer",
+    "header": "Contrôle Matériel Obligatoire sur {{race}} du {{event}} par {{marshal}}",
+    "requiredMsg": "Merci de renseigner l'évènement, la course et le commissaire avant d'enregistrer un contrôle.",
+    "bibDigits": "Le numéro de dossard doit contenir uniquement des chiffres.",
+    "dupConfirm": "⚠️ Ce dossard a déjà été contrôlé. Voulez-vous continuer ?",
+    "allowedRange": "Plage autorisée : {{min}} – {{max}}",
+    "bibOutOfRange": "Dossard hors plage pour cette course."
+  }
+  

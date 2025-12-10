@@ -1,0 +1,492 @@
+import { useEffect, useState } from "react";
+import { supabase } from "./supabaseClient";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+
+// Helper SHA-256 (natif navigateur)
+async function sha256Hex(s) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+export default function AdminControleCoureurs() {
+  // --------- Barrière mot de passe ---------
+  const [ok, setOk] = useState(() => sessionStorage.getItem("admin_ok") === "1");
+  const [pw, setPw] = useState("");
+  const [isAuthing, setIsAuthing] = useState(false);
+  const HASH = import.meta.env.VITE_ADMIN_PW_HASH; // <= définir en env
+
+  const tryLogin = async (e) => {
+    e.preventDefault();
+    if (!HASH) {
+      alert("Configuration manquante : VITE_ADMIN_PW_HASH n'est pas défini.");
+      return;
+    }
+    try {
+      setIsAuthing(true);
+      const hashInput = await sha256Hex(pw);
+      if (hashInput === HASH) {
+        sessionStorage.setItem("admin_ok", "1");
+        setOk(true);
+        setPw("");
+      } else {
+        alert("Mot de passe incorrect");
+      }
+    } finally {
+      setIsAuthing(false);
+    }
+  };
+  // -----------------------------------------
+
+  // Sélections
+  const [eventId, setEventId] = useState(() => localStorage.getItem("admin_event_id") || "");
+  const [raceId, setRaceId] = useState(() => localStorage.getItem("admin_race_id") || "");
+
+  // Données
+  const [eventList, setEventList] = useState([]);
+  const [raceList, setRaceList] = useState([]);
+  const [controles, setControles] = useState([]);
+  const [marshals, setMarshals] = useState({});
+
+  // Statut connexion
+  const [connectionStatus, setConnectionStatus] = useState("checking"); // 'online' | 'offline' | 'checking'
+
+  // Vérif connexion DB (uniquement si logué)
+  useEffect(() => {
+    if (!ok) return;
+    const checkConnection = async () => {
+      const { error } = await supabase.from("events").select("id").limit(1);
+      setConnectionStatus(error ? "offline" : "online");
+    };
+    checkConnection();
+  }, [ok]);
+
+  // Charger évènements (uniquement si logué)
+  useEffect(() => {
+    if (!ok) return;
+    const fetchEvents = async () => {
+      const { data, error } = await supabase.from("events").select("id, name");
+      if (!error && data) setEventList(data);
+    };
+    fetchEvents();
+  }, [ok]);
+
+  // Charger commissaires (uniquement si logué)
+  useEffect(() => {
+    if (!ok) return;
+    const fetchMarshals = async () => {
+      const { data, error } = await supabase
+        .from("marshals")
+        .select("id, firstName, lastName")
+        .order("lastName", { ascending: true });
+      if (!error && data) {
+        const mapping = {};
+        data.forEach((m) => (mapping[m.id] = `${m.firstName} ${m.lastName}`));
+        setMarshals(mapping);
+      }
+    };
+    fetchMarshals();
+  }, [ok]);
+
+  // Charger courses (races) quand event change (uniquement si logué)
+  useEffect(() => {
+    if (!ok) return;
+    const fetchRaces = async () => {
+      if (!eventId) {
+        setRaceList([]);
+        setRaceId("");
+        localStorage.removeItem("admin_race_id");
+        return;
+      }
+      const { data, error } = await supabase
+        .from("races")
+        .select("id, name")
+        .eq("event_id", eventId)
+        .order("name", { ascending: true });
+      if (!error && data) {
+        setRaceList(data);
+        // Si la race sélectionnée n'appartient pas au nouvel event, reset
+        if (!data.find((r) => r.id.toString() === raceId)) {
+          setRaceId("");
+          localStorage.removeItem("admin_race_id");
+        }
+      }
+    };
+    fetchRaces();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ok, eventId]);
+
+  // Polling des contrôles pour la course sélectionnée (uniquement si logué)
+  useEffect(() => {
+    if (!ok) return;
+    let interval;
+    const fetchControles = async () => {
+      if (!raceId) return;
+      const { data, error } = await supabase
+        .from("controles")
+        .select("*, marshal_id")
+        .eq("race_id", raceId)
+        .order("created_at", { ascending: false });
+      if (!error && data) setControles(data);
+    };
+
+    if (raceId) {
+      fetchControles();
+      interval = setInterval(fetchControles, 5000);
+    }
+    return () => clearInterval(interval);
+  }, [ok, raceId]);
+
+  // Handlers sélection
+  const handleEventChange = (e) => {
+    const val = e.target.value;
+    setEventId(val);
+    localStorage.setItem("admin_event_id", val);
+    // Reset course à chaque changement d’évènement
+    setRaceId("");
+    localStorage.removeItem("admin_race_id");
+    setControles([]);
+  };
+
+  const handleRaceChange = (e) => {
+    const val = e.target.value;
+    setRaceId(val);
+    if (val) localStorage.setItem("admin_race_id", val);
+    else localStorage.removeItem("admin_race_id");
+  };
+
+  // Helpers d’affichage
+  const getEventName = (id) => eventList.find((e) => e.id.toString() === id)?.name || "";
+  const getRaceName = (id) => raceList.find((r) => r.id.toString() === id)?.name || "";
+
+  const countByDossard = controles.reduce((acc, curr) => {
+    acc[curr.dossard] = (acc[curr.dossard] || 0) + 1;
+    return acc;
+  }, {});
+  const getAttentionEmoji = (dossard) => (countByDossard[dossard] > 1 ? "⚠️ " : "");
+
+  const formatDate = (timestamp) =>
+    new Date(timestamp).toLocaleString("fr-FR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+  const controlesKO = controles.filter((c) => c.resultat === "ko");
+  const controlesOK = controles.filter((c) => c.resultat === "ok");
+
+  // ---- Groupes par dossard (historique) ----
+  const bibGroups = (() => {
+    const map = new Map();
+    for (const c of controles) {
+      const key = c.dossard;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(c);
+    }
+
+    const summaries = [];
+    for (const [dossard, arr] of map.entries()) {
+      arr.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      const last = arr[arr.length - 1];
+      const hasKO = arr.some((x) => x.resultat === "ko");
+      const hasOK = arr.some((x) => x.resultat === "ok");
+      const lastKO = [...arr].reverse().find((x) => x.resultat === "ko") || null;
+
+      summaries.push({
+        dossard,
+        history: arr,                 // tous les contrôles (triés)
+        last,                         // dernier contrôle
+        lastAt: last.created_at,
+        lastMarshalId: last.marshal_id,
+        lastResult: last.resultat,    // "ok" | "ko"
+        hasKO,
+        hasOK,
+        wentKoThenOk: hasKO && last.resultat === "ok",
+        lastKO,                       // le dernier KO (si existe)
+      });
+    }
+
+    // Tri par "dernier contrôle" décroissant dans chaque catégorie
+    const stillKO = summaries
+      .filter((s) => s.lastResult === "ko")
+      .sort((a, b) => new Date(b.lastAt) - new Date(a.lastAt));
+
+    const koThenOk = summaries
+      .filter((s) => s.wentKoThenOk)
+      .sort((a, b) => new Date(b.lastAt) - new Date(a.lastAt));
+
+    const okDirect = summaries
+      .filter((s) => s.lastResult === "ok" && !s.hasKO)
+      .sort((a, b) => new Date(b.lastAt) - new Date(a.lastAt));
+
+    return { stillKO, koThenOk, okDirect };
+  })();
+
+  // Export PDF
+  const exportPDF = () => {
+    const doc = new jsPDF();
+    const now = new Date();
+    const exportTime = now.toLocaleString("fr-FR");
+    const eventName = getEventName(eventId);
+    const raceName = getRaceName(raceId);
+
+    doc.setFontSize(14);
+    doc.text(`Export des contrôles - ${eventName} - ${raceName}`, 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Date d'export : ${exportTime}`, 14, 27);
+    doc.text(`Nombre total : ${controles.length}`, 14, 33);
+    doc.text(`Nombre OK : ${controlesOK.length}`, 14, 38);
+    doc.text(`Nombre KO : ${controlesKO.length}`, 14, 43);
+
+    autoTable(doc, {
+      startY: 50,
+      head: [["Dossard", "Résultat", "Matériel manquant", "Commentaire", "Commissaire", "Date / Heure"]],
+      body: controles.map((c) => [
+        c.dossard,
+        c.resultat?.toUpperCase() || "-",
+        c.materiel_manquant || "-",
+        c.commentaire || "-",
+        marshals[c.marshal_id] || "?",
+        formatDate(c.created_at),
+      ]),
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [240, 240, 240] },
+    });
+
+    const safe = (s) => (s || "").toString().trim().replace(/[^\w-]+/g, "_");
+    doc.save(`controles_${safe(eventName)}_${safe(raceName)}.pdf`);
+  };
+
+  return (
+    <div className="p-4 max-w-4xl mx-auto">
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-2xl font-bold">Tableau des Contrôles</h1>
+        <div className="flex items-center gap-3">
+          <div
+            className={`text-sm font-medium px-2 py-1 rounded ${
+              connectionStatus === "online"
+                ? "bg-green-100 text-green-800"
+                : connectionStatus === "offline"
+                ? "bg-red-100 text-red-800"
+                : "bg-yellow-100 text-yellow-800"
+            }`}
+          >
+            {connectionStatus === "online" && "✅ Connecté à la base de données"}
+            {connectionStatus === "offline" && "❌ Connexion échouée"}
+            {connectionStatus === "checking" && "⏳ Vérification..."}
+          </div>
+          {/* Déconnexion */}
+          <button
+            onClick={() => {
+              sessionStorage.removeItem("admin_ok");
+              setOk(false);
+            }}
+            className="text-sm px-3 py-1 border rounded hover:bg-gray-50"
+            title="Se déconnecter"
+          >
+            Déconnexion
+          </button>
+        </div>
+      </div>
+
+      <div className="flex gap-4 mb-6 flex-wrap">
+        <select value={eventId} onChange={handleEventChange} className="p-2 border rounded">
+          <option value="">-- Choisir un évènement --</option>
+          {eventList.map((e) => (
+            <option key={e.id} value={e.id}>
+              {e.name}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={raceId}
+          onChange={handleRaceChange}
+          className="p-2 border rounded"
+          disabled={!eventId}
+        >
+          <option value="">{eventId ? "-- Choisir une course --" : "Sélectionnez d'abord un évènement"}</option>
+          {raceList.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {eventId && raceId && (
+        <>
+          <p className="text-sm text-gray-600 italic mb-4">
+            {controles.length} contrôles enregistrés pour <strong>{getEventName(eventId)}</strong> –{" "}
+            <strong>{getRaceName(raceId)}</strong>
+          </p>
+
+          {/* Statistiques par commissaire */}
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold mb-2">Statistiques par commissaire :</h3>
+            <ul className="text-sm text-gray-800 list-disc list-inside">
+              {Object.entries(
+                controles.reduce((acc, curr) => {
+                  acc[curr.marshal_id] = (acc[curr.marshal_id] || 0) + 1;
+                  return acc;
+                }, {})
+              )
+                .sort((a, b) => b[1] - a[1])
+                .map(([marshalId, count]) => (
+                  <li key={marshalId}>
+                    {marshals[marshalId] || "Non renseigné"} : {count} contrôles (
+                    {((count / controles.length) * 100).toFixed(1)}%)
+                  </li>
+                ))}
+            </ul>
+          </div>
+
+          {/* 1) KO persistants */}
+          <h2 className="text-lg font-semibold mb-2">Contrôles KO (sans recontrôle OK)</h2>
+          <table className="w-full mb-6 border text-sm">
+            <thead className="sticky top-0 bg-white z-10">
+              <tr className="bg-red-100">
+                <th className="border p-2">Dossard</th>
+                <th className="border p-2">Matériel manquant</th>
+                <th className="border p-2">Commentaire</th>
+                <th className="border p-2">Date / Heure</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bibGroups.stillKO.map((s) => (
+                <tr key={s.dossard} className="border-t">
+                  <td className="border p-2">
+                    ⚠️ {s.dossard}{" "}
+                    <span className="text-xs text-gray-500">({marshals[s.lastMarshalId] || "?"})</span>
+                  </td>
+                  <td className="border p-2">{s.last?.materiel_manquant || "-"}</td>
+                  <td className="border p-2">{s.last?.commentaire || "-"}</td>
+                  <td className="border p-2 whitespace-nowrap">{formatDate(s.lastAt)}</td>
+                </tr>
+              ))}
+              {bibGroups.stillKO.length === 0 && (
+                <tr>
+                  <td colSpan="4" className="text-center p-2">
+                    Aucun KO restant
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+
+          {/* 2) KO recontrôlés OK */}
+          <h2 className="text-lg font-semibold mb-2">KO recontrôlés comme OK</h2>
+          <table className="w-full mb-6 border text-sm">
+            <thead className="sticky top-0 bg-white z-10">
+              <tr className="bg-amber-100">
+                <th className="border p-2">Dossard</th>
+                <th className="border p-2">Dernier contrôle (OK)</th>
+                <th className="border p-2">Commissaire</th>
+                <th className="border p-2">Dernier KO — Matériel</th>
+                <th className="border p-2">Dernier KO — Commentaire</th>
+                <th className="border p-2">Historique</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bibGroups.koThenOk.map((s) => (
+                <tr key={s.dossard} className="border-t">
+                  <td className="border p-2">⚠️ {s.dossard}</td>
+                  <td className="border p-2 whitespace-nowrap">{formatDate(s.lastAt)}</td>
+                  <td className="border p-2">{marshals[s.lastMarshalId] || "?"}</td>
+                  <td className="border p-2">{s.lastKO?.materiel_manquant || "-"}</td>
+                  <td className="border p-2">{s.lastKO?.commentaire || "-"}</td>
+                  <td className="border p-2">
+                    {s.history.map(h => (h.resultat === "ok" ? "✅" : "❌")).join(" → ")}
+                  </td>
+                </tr>
+              ))}
+              {bibGroups.koThenOk.length === 0 && (
+                <tr>
+                  <td colSpan="6" className="text-center p-2">
+                    Aucun KO recontrôlé OK
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+
+          {/* 3) OK directs */}
+          <h2 className="text-lg font-semibold mb-2">Contrôles OK (directs)</h2>
+          <table className="w-full border text-sm">
+            <thead className="sticky top-0 bg-white z-10">
+              <tr className="bg-green-100">
+                <th className="border p-2">Dossard</th>
+                <th className="border p-2">Dernier contrôle</th>
+                <th className="border p-2">Commissaire</th>
+                <th className="border p-2">Historique</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bibGroups.okDirect.map((s) => (
+                <tr key={s.dossard} className="border-t">
+                  <td className="border p-2">{s.dossard}</td>
+                  <td className="border p-2 whitespace-nowrap">{formatDate(s.lastAt)}</td>
+                  <td className="border p-2">{marshals[s.lastMarshalId] || "?"}</td>
+                  <td className="border p-2">
+                    {s.history.map(h => (h.resultat === "ok" ? "✅" : "❌")).join(" → ")}
+                  </td>
+                </tr>
+              ))}
+              {bibGroups.okDirect.length === 0 && (
+                <tr>
+                  <td colSpan="4" className="text-center p-2">Aucun dossard OK direct</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+
+          <div className="mt-6 flex gap-2">
+            <button onClick={exportPDF} className="px-4 py-2 bg-blue-700 text-white rounded hover:bg-blue-800">
+              📄 Exporter en PDF
+            </button>
+            <button
+              onClick={() => {
+                sessionStorage.removeItem("admin_ok");
+                setOk(false);
+              }}
+              className="px-4 py-2 border rounded hover:bg-gray-50"
+              title="Se déconnecter"
+            >
+              Se déconnecter
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* -------- Overlay d'auth tant que non connecté -------- */}
+      {!ok && (
+        <div className="fixed inset-0 z-50 bg-white/90 backdrop-blur-sm grid place-items-center p-4">
+          <form onSubmit={tryLogin} className="w-full max-w-xs space-y-3 border rounded-lg bg-white p-5 shadow">
+            <h1 className="text-lg font-semibold">Accès superviseur</h1>
+            <p className="text-sm text-gray-600">Veuillez saisir le mot de passe pour continuer.</p>
+            <input
+              type="password"
+              className="w-full border rounded p-2"
+              placeholder="Mot de passe"
+              value={pw}
+              onChange={(e) => setPw(e.target.value)}
+              autoFocus
+              disabled={isAuthing}
+            />
+            <button className="w-full bg-blue-600 text-white rounded p-2 disabled:opacity-60" disabled={isAuthing}>
+              {isAuthing ? "Vérification..." : "Entrer"}
+            </button>
+            {!HASH && (
+              <p className="text-xs text-red-600 mt-2">
+                Attention : <code>VITE_ADMIN_PW_HASH</code> n'est pas défini côté build.
+              </p>
+            )}
+          </form>
+        </div>
+      )}
+      {/* ------------------------------------------------------ */}
+    </div>
+  );
+}

@@ -1,0 +1,27 @@
+{
+    "titleSelectEvent": "Select event",
+    "event": "Event",
+    "race": "Race",
+    "marshal": "Marshal",
+    "location": "Checkpoint",
+    "start": "Start",
+    "lockedEvent": "This event is locked. Entry is disabled.",
+    "bib": "Bib number",
+    "ok": "OK",
+    "ko": "KO",
+    "missingGear": "Missing gear",
+    "other": "Other (comment)",
+    "comment": "Comment (optional)",
+    "send": "Submit",
+    "last10": "Last 10 checked bibs",
+    "alreadyAt": "Already checked at {{time}}",
+    "saved": "✅ Saved",
+    "clear": "Clear",
+    "header": "Mandatory Gear Check for {{race}} at {{event}} by {{marshal}}",
+    "requiredMsg": "Please select event, race and marshal before saving.",
+    "bibDigits": "Bib number must contain digits only.",
+    "dupConfirm": "⚠️ This bib was already checked. Continue?",
+    "allowedRange": "Allowed range: {{min}} – {{max}}",
+    "bibOutOfRange": "Bib number out of range for this race."
+  }
+  
