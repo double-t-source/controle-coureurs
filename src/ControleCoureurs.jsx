@@ -2,46 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { supabase } from "./supabaseClient";
 
-function LangSegmented({ value, onChange }) {
-  return (
-    <fieldset aria-label="Language" className="select-none">
-      <legend className="sr-only">Language</legend>
-      <div className="inline-flex items-center gap-1 rounded-full border bg-white p-1 shadow">
-        {["fr", "en"].map((lang) => {
-          const active = value === lang;
-          return (
-            <label
-              key={lang}
-              className={[
-                "cursor-pointer rounded-full px-3 py-1 text-sm font-medium transition",
-                active ? "bg-blue-600 text-white shadow" : "text-gray-600 hover:bg-gray-100",
-              ].join(" ")}
-            >
-              <input
-                type="radio"
-                name="language"
-                value={lang}
-                checked={active}
-                onChange={() => onChange(lang)}
-                className="sr-only"
-              />
-              {lang.toUpperCase()}
-            </label>
-          );
-        })}
-      </div>
-    </fieldset>
-  );
-}
-
 const ControleCoureurs = () => {
   const { t, i18n } = useTranslation();
 
   const currentLang = (i18n.resolvedLanguage || i18n.language).slice(0, 2);
-  const handleLangChange = (lang) => {
-    i18n.changeLanguage(lang);
-    localStorage.setItem("lang", lang);
-  };
   const labelFor = (g) =>
     currentLang === "fr" ? (g.label_fr || g.code) : (g.label_en || g.label_fr || g.code);
 
@@ -281,14 +245,13 @@ const ControleCoureurs = () => {
 
   return (
     <div className="p-2 max-w-md mx-auto h-[100dvh] flex flex-col justify-center">
-      {/* Header : logo + toggle langue */}
+      {/* Header : logo */}
       <header className="mb-4 flex flex-col items-center gap-2 pt-3">
         <img
           src="https://res.cloudinary.com/utmb-world/image/upload/q_auto/f_auto/c_fill,g_auto/if_w_gt_240/c_scale,w_240/if_end/v1/worldseries/logo_UTMB_WS_e023c5f3f6.png"
           alt="Logo"
           className="h-10 w-auto"
         />
-        <LangSegmented value={currentLang} onChange={handleLangChange} />
       </header>
 
       {step === 1 ? (

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { supabase } from "./supabaseClient";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -10,6 +11,8 @@ async function sha256Hex(s) {
 }
 
 export default function AdminControleCoureurs() {
+  const { t, i18n } = useTranslation();
+
   // --------- Barrière mot de passe ---------
   const [ok, setOk] = useState(() => sessionStorage.getItem("admin_ok") === "1");
   const [pw, setPw] = useState("");
@@ -19,7 +22,7 @@ export default function AdminControleCoureurs() {
   const tryLogin = async (e) => {
     e.preventDefault();
     if (!HASH) {
-      alert("Configuration manquante : VITE_ADMIN_PW_HASH n'est pas défini.");
+      alert(t("admin.authHashMissingAlert"));
       return;
     }
     try {
@@ -30,7 +33,7 @@ export default function AdminControleCoureurs() {
         setOk(true);
         setPw("");
       } else {
-        alert("Mot de passe incorrect");
+        alert(t("admin.authWrongPw"));
       }
     } finally {
       setIsAuthing(false);
@@ -166,7 +169,7 @@ export default function AdminControleCoureurs() {
   const getAttentionEmoji = (dossard) => (countByDossard[dossard] > 1 ? "⚠️ " : "");
 
   const formatDate = (timestamp) =>
-    new Date(timestamp).toLocaleString("fr-FR", {
+    new Date(timestamp).toLocaleString(i18n.language, {
       day: "2-digit",
       month: "2-digit",
       year: "2-digit",
@@ -228,21 +231,21 @@ export default function AdminControleCoureurs() {
   const exportPDF = () => {
     const doc = new jsPDF();
     const now = new Date();
-    const exportTime = now.toLocaleString("fr-FR");
+    const exportTime = now.toLocaleString(i18n.language);
     const eventName = getEventName(eventId);
     const raceName = getRaceName(raceId);
 
     doc.setFontSize(14);
-    doc.text(`Export des contrôles - ${eventName} - ${raceName}`, 14, 20);
+    doc.text(t("admin.exportTitle", { event: eventName, race: raceName }), 14, 20);
     doc.setFontSize(10);
-    doc.text(`Date d'export : ${exportTime}`, 14, 27);
-    doc.text(`Nombre total : ${controles.length}`, 14, 33);
-    doc.text(`Nombre OK : ${controlesOK.length}`, 14, 38);
-    doc.text(`Nombre KO : ${controlesKO.length}`, 14, 43);
+    doc.text(t("admin.exportDate", { date: exportTime }), 14, 27);
+    doc.text(t("admin.totalCount", { count: controles.length }), 14, 33);
+    doc.text(t("admin.okCount", { count: controlesOK.length }), 14, 38);
+    doc.text(t("admin.koCount", { count: controlesKO.length }), 14, 43);
 
     autoTable(doc, {
       startY: 50,
-      head: [["Dossard", "Résultat", "Matériel manquant", "Commentaire", "Commissaire", "Date / Heure"]],
+      head: [[t("admin.pdfBib"), t("admin.pdfResult"), t("admin.pdfMissingGear"), t("admin.pdfComment"), t("admin.pdfMarshal"), t("admin.pdfDateTime")]],
       body: controles.map((c) => [
         c.dossard,
         c.resultat?.toUpperCase() || "-",
@@ -262,7 +265,7 @@ export default function AdminControleCoureurs() {
   return (
     <div className="p-4 max-w-4xl mx-auto">
       <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold">Tableau des Contrôles</h1>
+        <h1 className="text-2xl font-bold">{t("admin.title")}</h1>
         <div className="flex items-center gap-3">
           <div
             className={`text-sm font-medium px-2 py-1 rounded ${
@@ -273,27 +276,25 @@ export default function AdminControleCoureurs() {
                 : "bg-yellow-100 text-yellow-800"
             }`}
           >
-            {connectionStatus === "online" && "✅ Connecté à la base de données"}
-            {connectionStatus === "offline" && "❌ Connexion échouée"}
-            {connectionStatus === "checking" && "⏳ Vérification..."}
+            {connectionStatus === "online" && t("admin.dbOnline")}
+            {connectionStatus === "offline" && t("admin.dbOffline")}
+            {connectionStatus === "checking" && t("admin.dbChecking")}
           </div>
-          {/* Déconnexion */}
           <button
             onClick={() => {
               sessionStorage.removeItem("admin_ok");
               setOk(false);
             }}
             className="text-sm px-3 py-1 border rounded hover:bg-gray-50"
-            title="Se déconnecter"
           >
-            Déconnexion
+            {t("admin.logout")}
           </button>
         </div>
       </div>
 
       <div className="flex gap-4 mb-6 flex-wrap">
         <select value={eventId} onChange={handleEventChange} className="p-2 border rounded">
-          <option value="">-- Choisir un évènement --</option>
+          <option value="">{t("admin.chooseEvent")}</option>
           {eventList.map((e) => (
             <option key={e.id} value={e.id}>
               {e.name}
@@ -307,7 +308,7 @@ export default function AdminControleCoureurs() {
           className="p-2 border rounded"
           disabled={!eventId}
         >
-          <option value="">{eventId ? "-- Choisir une course --" : "Sélectionnez d'abord un évènement"}</option>
+          <option value="">{eventId ? t("admin.chooseRace") : t("admin.selectEventFirst")}</option>
           {raceList.map((r) => (
             <option key={r.id} value={r.id}>
               {r.name}
@@ -319,13 +320,13 @@ export default function AdminControleCoureurs() {
       {eventId && raceId && (
         <>
           <p className="text-sm text-gray-600 italic mb-4">
-            {controles.length} contrôles enregistrés pour <strong>{getEventName(eventId)}</strong> –{" "}
+            {t("admin.controlsRecorded", { count: controles.length })} <strong>{getEventName(eventId)}</strong> –{" "}
             <strong>{getRaceName(raceId)}</strong>
           </p>
 
           {/* Statistiques par commissaire */}
           <div className="mb-6">
-            <h3 className="text-sm font-semibold mb-2">Statistiques par commissaire :</h3>
+            <h3 className="text-sm font-semibold mb-2">{t("admin.statsByMarshal")}</h3>
             <ul className="text-sm text-gray-800 list-disc list-inside">
               {Object.entries(
                 controles.reduce((acc, curr) => {
@@ -336,7 +337,7 @@ export default function AdminControleCoureurs() {
                 .sort((a, b) => b[1] - a[1])
                 .map(([marshalId, count]) => (
                   <li key={marshalId}>
-                    {marshals[marshalId] || "Non renseigné"} : {count} contrôles (
+                    {marshals[marshalId] || t("admin.unknownMarshal")} : {count} {t("admin.controls")} (
                     {((count / controles.length) * 100).toFixed(1)}%)
                   </li>
                 ))}
@@ -344,14 +345,14 @@ export default function AdminControleCoureurs() {
           </div>
 
           {/* 1) KO persistants */}
-          <h2 className="text-lg font-semibold mb-2">Contrôles KO (sans recontrôle OK)</h2>
+          <h2 className="text-lg font-semibold mb-2">{t("admin.stillKOTitle")}</h2>
           <table className="w-full mb-6 border text-sm">
             <thead className="sticky top-0 bg-white z-10">
               <tr className="bg-red-100">
-                <th className="border p-2">Dossard</th>
-                <th className="border p-2">Matériel manquant</th>
-                <th className="border p-2">Commentaire</th>
-                <th className="border p-2">Date / Heure</th>
+                <th className="border p-2">{t("admin.bib")}</th>
+                <th className="border p-2">{t("admin.missingGear")}</th>
+                <th className="border p-2">{t("admin.comment")}</th>
+                <th className="border p-2">{t("admin.dateTime")}</th>
               </tr>
             </thead>
             <tbody>
@@ -369,7 +370,7 @@ export default function AdminControleCoureurs() {
               {bibGroups.stillKO.length === 0 && (
                 <tr>
                   <td colSpan="4" className="text-center p-2">
-                    Aucun KO restant
+                    {t("admin.noKORemaining")}
                   </td>
                 </tr>
               )}
@@ -377,16 +378,16 @@ export default function AdminControleCoureurs() {
           </table>
 
           {/* 2) KO recontrôlés OK */}
-          <h2 className="text-lg font-semibold mb-2">KO recontrôlés comme OK</h2>
+          <h2 className="text-lg font-semibold mb-2">{t("admin.koThenOkTitle")}</h2>
           <table className="w-full mb-6 border text-sm">
             <thead className="sticky top-0 bg-white z-10">
               <tr className="bg-amber-100">
-                <th className="border p-2">Dossard</th>
-                <th className="border p-2">Dernier contrôle (OK)</th>
-                <th className="border p-2">Commissaire</th>
-                <th className="border p-2">Dernier KO — Matériel</th>
-                <th className="border p-2">Dernier KO — Commentaire</th>
-                <th className="border p-2">Historique</th>
+                <th className="border p-2">{t("admin.bib")}</th>
+                <th className="border p-2">{t("admin.lastOkControl")}</th>
+                <th className="border p-2">{t("admin.marshal")}</th>
+                <th className="border p-2">{t("admin.lastKOMaterial")}</th>
+                <th className="border p-2">{t("admin.lastKOComment")}</th>
+                <th className="border p-2">{t("admin.history")}</th>
               </tr>
             </thead>
             <tbody>
@@ -405,7 +406,7 @@ export default function AdminControleCoureurs() {
               {bibGroups.koThenOk.length === 0 && (
                 <tr>
                   <td colSpan="6" className="text-center p-2">
-                    Aucun KO recontrôlé OK
+                    {t("admin.noKOThenOk")}
                   </td>
                 </tr>
               )}
@@ -413,14 +414,14 @@ export default function AdminControleCoureurs() {
           </table>
 
           {/* 3) OK directs */}
-          <h2 className="text-lg font-semibold mb-2">Contrôles OK (directs)</h2>
+          <h2 className="text-lg font-semibold mb-2">{t("admin.okDirectTitle")}</h2>
           <table className="w-full border text-sm">
             <thead className="sticky top-0 bg-white z-10">
               <tr className="bg-green-100">
-                <th className="border p-2">Dossard</th>
-                <th className="border p-2">Dernier contrôle</th>
-                <th className="border p-2">Commissaire</th>
-                <th className="border p-2">Historique</th>
+                <th className="border p-2">{t("admin.bib")}</th>
+                <th className="border p-2">{t("admin.lastControl")}</th>
+                <th className="border p-2">{t("admin.marshal")}</th>
+                <th className="border p-2">{t("admin.history")}</th>
               </tr>
             </thead>
             <tbody>
@@ -436,7 +437,7 @@ export default function AdminControleCoureurs() {
               ))}
               {bibGroups.okDirect.length === 0 && (
                 <tr>
-                  <td colSpan="4" className="text-center p-2">Aucun dossard OK direct</td>
+                  <td colSpan="4" className="text-center p-2">{t("admin.noOKDirect")}</td>
                 </tr>
               )}
             </tbody>
@@ -444,7 +445,7 @@ export default function AdminControleCoureurs() {
 
           <div className="mt-6 flex gap-2">
             <button onClick={exportPDF} className="px-4 py-2 bg-blue-700 text-white rounded hover:bg-blue-800">
-              📄 Exporter en PDF
+              {t("admin.exportPDF")}
             </button>
             <button
               onClick={() => {
@@ -452,9 +453,8 @@ export default function AdminControleCoureurs() {
                 setOk(false);
               }}
               className="px-4 py-2 border rounded hover:bg-gray-50"
-              title="Se déconnecter"
             >
-              Se déconnecter
+              {t("admin.logout")}
             </button>
           </div>
         </>
@@ -464,23 +464,23 @@ export default function AdminControleCoureurs() {
       {!ok && (
         <div className="fixed inset-0 z-50 bg-white/90 backdrop-blur-sm grid place-items-center p-4">
           <form onSubmit={tryLogin} className="w-full max-w-xs space-y-3 border rounded-lg bg-white p-5 shadow">
-            <h1 className="text-lg font-semibold">Accès superviseur</h1>
-            <p className="text-sm text-gray-600">Veuillez saisir le mot de passe pour continuer.</p>
+            <h1 className="text-lg font-semibold">{t("admin.authTitle")}</h1>
+            <p className="text-sm text-gray-600">{t("admin.authDesc")}</p>
             <input
               type="password"
               className="w-full border rounded p-2"
-              placeholder="Mot de passe"
+              placeholder={t("admin.authPlaceholder")}
               value={pw}
               onChange={(e) => setPw(e.target.value)}
               autoFocus
               disabled={isAuthing}
             />
             <button className="w-full bg-blue-600 text-white rounded p-2 disabled:opacity-60" disabled={isAuthing}>
-              {isAuthing ? "Vérification..." : "Entrer"}
+              {isAuthing ? t("admin.authChecking") : t("admin.authEnter")}
             </button>
             {!HASH && (
               <p className="text-xs text-red-600 mt-2">
-                Attention : <code>VITE_ADMIN_PW_HASH</code> n'est pas défini côté build.
+                {t("admin.authHashMissing")}
               </p>
             )}
           </form>
