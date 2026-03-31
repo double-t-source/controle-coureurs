@@ -23,6 +23,19 @@
   "dupConfirm": "⚠️ This bib was already checked. Continue?",
   "allowedRange": "Allowed range: {{min}} – {{max}}",
   "bibOutOfRange": "Bib number out of range for this race.",
+  "geo": {
+    "modeNo": "Disabled",
+    "modeOptional": "Optional (bypassable)",
+    "modeMandatory": "Mandatory",
+    "permissionInfo": "This event records your GPS location with each check.",
+    "permissionRequired": "This event requires your location. Please allow it.",
+    "allowBtn": "Allow location",
+    "denied": "Location denied. Please allow it in your browser settings.",
+    "mandatoryBlocked": "Location is mandatory for this event. Allow it to continue.",
+    "requesting": "Getting location...",
+    "granted": "✅ Location enabled",
+    "unavailable": "Geolocation is not available on this device."
+  },
   "nav": {
     "control": "Control",
     "admin": "Race Control Summary",
@@ -57,6 +70,10 @@
     "okDirectTitle": "OK Controls (direct)",
     "lastControl": "Last control",
     "noOKDirect": "No direct OK bibs",
+    "showMap": "Map",
+    "hideMap": "Hide map",
+    "mapTitle": "Check locations",
+    "noGeoData": "No geolocated checks for this race.",
     "exportPDF": "📄 Export to PDF",
     "exportTitle": "Control export - {{event}} - {{race}}",
     "exportDate": "Export date: {{date}}",
@@ -129,6 +146,10 @@
     "addMarshal": "Add marshal",
     "noMarshals": "No marshals.",
     "deleteMarshalConfirm": "Delete marshal \"{{name}}\"?",
+    "geoMode": "Geolocation",
+    "geoModeNo": "Disabled",
+    "geoModeOptional": "Optional",
+    "geoModeMandatory": "Mandatory",
     "saveError": "Save error. Please try again.",
     "loadError": "Error loading data."
   }

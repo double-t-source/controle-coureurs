@@ -3,6 +3,17 @@ import { useTranslation } from "react-i18next";
 import { supabase } from "./supabaseClient";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from "react-leaflet";
+import { Map, MapPin } from "lucide-react";
+import "leaflet/dist/leaflet.css";
+
+function MapFlyTo({ center }) {
+  const map = useMap();
+  useEffect(() => {
+    if (center) map.flyTo(center, Math.max(map.getZoom(), 15), { animate: true, duration: 0.5 });
+  }, [center, map]);
+  return null;
+}
 
 // Helper SHA-256 (natif navigateur)
 async function sha256Hex(s) {
@@ -53,6 +64,10 @@ export default function AdminControleCoureurs() {
 
   // Statut connexion
   const [connectionStatus, setConnectionStatus] = useState("checking"); // 'online' | 'offline' | 'checking'
+
+  // Map panel
+  const [showMap, setShowMap] = useState(false);
+  const [selectedControleId, setSelectedControleId] = useState(null);
 
   // Vérif connexion DB (uniquement si logué)
   useEffect(() => {
@@ -154,6 +169,7 @@ export default function AdminControleCoureurs() {
   const handleRaceChange = (e) => {
     const val = e.target.value;
     setRaceId(val);
+    setSelectedControleId(null);
     if (val) localStorage.setItem("admin_race_id", val);
     else localStorage.removeItem("admin_race_id");
   };
@@ -262,11 +278,32 @@ export default function AdminControleCoureurs() {
     doc.save(`controles_${safe(eventName)}_${safe(raceName)}.pdf`);
   };
 
+  // Map derived values
+  const geoControles = controles.filter((c) => c.latitude != null && c.longitude != null);
+  const mapCenter = geoControles.length > 0
+    ? [
+        geoControles.reduce((s, c) => s + c.latitude, 0) / geoControles.length,
+        geoControles.reduce((s, c) => s + c.longitude, 0) / geoControles.length,
+      ]
+    : [46.5, 2.3];
+  const mapZoom = geoControles.length > 0 ? 13 : 6;
+  const selectedControle = controles.find((c) => c.id === selectedControleId);
+  const flyToCenter = selectedControle?.latitude != null
+    ? [selectedControle.latitude, selectedControle.longitude]
+    : null;
+
+  const handleRowClick = (controleId) => setSelectedControleId(controleId);
+  const handleMapIconClick = (e, controleId) => {
+    e.stopPropagation();
+    setSelectedControleId(controleId);
+    setShowMap(true);
+  };
+
   return (
-    <div className="p-4 max-w-4xl mx-auto">
-      <div className="flex justify-between items-center mb-4">
+    <div className={`p-4 ${showMap ? "" : "max-w-4xl mx-auto"}`}>
+      <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
         <h1 className="text-2xl font-bold">{t("admin.title")}</h1>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <div
             className={`text-sm font-medium px-2 py-1 rounded ${
               connectionStatus === "online"
@@ -280,6 +317,15 @@ export default function AdminControleCoureurs() {
             {connectionStatus === "offline" && t("admin.dbOffline")}
             {connectionStatus === "checking" && t("admin.dbChecking")}
           </div>
+          {ok && raceId && (
+            <button
+              onClick={() => setShowMap((v) => !v)}
+              className={`text-sm px-3 py-1 border rounded flex items-center gap-1 ${showMap ? "bg-blue-600 text-white border-blue-600" : "hover:bg-gray-50"}`}
+            >
+              <Map size={14} />
+              {showMap ? t("admin.hideMap") : t("admin.showMap")}
+            </button>
+          )}
           <button
             onClick={() => {
               sessionStorage.removeItem("admin_ok");
@@ -291,6 +337,9 @@ export default function AdminControleCoureurs() {
           </button>
         </div>
       </div>
+
+      <div className={showMap ? "flex gap-4 items-start" : ""}>
+      <div className={showMap ? "flex-1 min-w-0" : ""}>
 
       <div className="flex gap-4 mb-6 flex-wrap">
         <select value={eventId} onChange={handleEventChange} className="p-2 border rounded">
@@ -357,10 +406,19 @@ export default function AdminControleCoureurs() {
             </thead>
             <tbody>
               {bibGroups.stillKO.map((s) => (
-                <tr key={s.dossard} className="border-t">
+                <tr
+                  key={s.dossard}
+                  className={`border-t cursor-pointer ${selectedControleId === s.last?.id ? "bg-orange-50" : "hover:bg-gray-50"}`}
+                  onClick={() => s.last && handleRowClick(s.last.id)}
+                >
                   <td className="border p-2">
                     ⚠️ {s.dossard}{" "}
                     <span className="text-xs text-gray-500">({marshals[s.lastMarshalId] || "?"})</span>
+                    {s.last?.latitude != null && (
+                      <button onClick={(e) => handleMapIconClick(e, s.last.id)} className="ml-1 text-blue-500 hover:text-blue-700 align-middle" title={t("admin.showMap")}>
+                        <MapPin size={13} className="inline" />
+                      </button>
+                    )}
                   </td>
                   <td className="border p-2">{s.last?.materiel_manquant || "-"}</td>
                   <td className="border p-2">{s.last?.commentaire || "-"}</td>
@@ -392,8 +450,19 @@ export default function AdminControleCoureurs() {
             </thead>
             <tbody>
               {bibGroups.koThenOk.map((s) => (
-                <tr key={s.dossard} className="border-t">
-                  <td className="border p-2">⚠️ {s.dossard}</td>
+                <tr
+                  key={s.dossard}
+                  className={`border-t cursor-pointer ${selectedControleId === s.last?.id ? "bg-orange-50" : "hover:bg-gray-50"}`}
+                  onClick={() => s.last && handleRowClick(s.last.id)}
+                >
+                  <td className="border p-2">
+                    ⚠️ {s.dossard}
+                    {s.last?.latitude != null && (
+                      <button onClick={(e) => handleMapIconClick(e, s.last.id)} className="ml-1 text-blue-500 hover:text-blue-700 align-middle" title={t("admin.showMap")}>
+                        <MapPin size={13} className="inline" />
+                      </button>
+                    )}
+                  </td>
                   <td className="border p-2 whitespace-nowrap">{formatDate(s.lastAt)}</td>
                   <td className="border p-2">{marshals[s.lastMarshalId] || "?"}</td>
                   <td className="border p-2">{s.lastKO?.materiel_manquant || "-"}</td>
@@ -426,8 +495,19 @@ export default function AdminControleCoureurs() {
             </thead>
             <tbody>
               {bibGroups.okDirect.map((s) => (
-                <tr key={s.dossard} className="border-t">
-                  <td className="border p-2">{s.dossard}</td>
+                <tr
+                  key={s.dossard}
+                  className={`border-t cursor-pointer ${selectedControleId === s.last?.id ? "bg-orange-50" : "hover:bg-gray-50"}`}
+                  onClick={() => s.last && handleRowClick(s.last.id)}
+                >
+                  <td className="border p-2">
+                    {s.dossard}
+                    {s.last?.latitude != null && (
+                      <button onClick={(e) => handleMapIconClick(e, s.last.id)} className="ml-1 text-blue-500 hover:text-blue-700 align-middle" title={t("admin.showMap")}>
+                        <MapPin size={13} className="inline" />
+                      </button>
+                    )}
+                  </td>
                   <td className="border p-2 whitespace-nowrap">{formatDate(s.lastAt)}</td>
                   <td className="border p-2">{marshals[s.lastMarshalId] || "?"}</td>
                   <td className="border p-2">
@@ -459,6 +539,52 @@ export default function AdminControleCoureurs() {
           </div>
         </>
       )}
+
+      </div>{/* end flex-1 content */}
+
+      {/* -------- Map panel -------- */}
+      {showMap && raceId && (
+        <div className="w-[420px] flex-shrink-0 sticky top-4 border rounded overflow-hidden bg-white" style={{ height: "calc(100vh - 7rem)" }}>
+          <div className="flex items-center gap-2 p-2 bg-gray-50 border-b text-sm font-medium">
+            <MapPin size={14} />
+            {t("admin.mapTitle")}
+          </div>
+          {geoControles.length === 0 ? (
+            <div className="p-4 text-sm text-gray-400">{t("admin.noGeoData")}</div>
+          ) : (
+            <MapContainer key={raceId} center={mapCenter} zoom={mapZoom} style={{ height: "calc(100% - 2.25rem)", width: "100%" }}>
+              <TileLayer
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                attribution="&copy; OpenStreetMap contributors"
+              />
+              <MapFlyTo center={flyToCenter} />
+              {geoControles.map((c) => (
+                <CircleMarker
+                  key={c.id}
+                  center={[c.latitude, c.longitude]}
+                  radius={c.id === selectedControleId ? 10 : 7}
+                  pathOptions={{
+                    color: c.id === selectedControleId ? "#ea580c" : "#2563eb",
+                    fillColor: c.id === selectedControleId ? "#ea580c" : "#2563eb",
+                    fillOpacity: 0.75,
+                  }}
+                  eventHandlers={{ click: () => setSelectedControleId(c.id) }}
+                >
+                  <Popup>
+                    <div className="text-sm space-y-0.5">
+                      <div><strong>{t("admin.bib")}: {c.dossard}</strong></div>
+                      <div>{c.resultat?.toUpperCase()}</div>
+                      <div>{marshals[c.marshal_id] || "?"}</div>
+                      <div>{formatDate(c.created_at)}</div>
+                    </div>
+                  </Popup>
+                </CircleMarker>
+              ))}
+            </MapContainer>
+          )}
+        </div>
+      )}
+      </div>{/* end showMap flex wrapper */}
 
       {/* -------- Overlay d'auth tant que non connecté -------- */}
       {!ok && (

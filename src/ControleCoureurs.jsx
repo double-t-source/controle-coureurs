@@ -37,10 +37,14 @@ const ControleCoureurs = () => {
   const [locationList, setLocationList] = useState([]);
   const [selectedLocation, setSelectedLocation] = useState("");
 
+  // Geolocation
+  // "idle" | "requesting" | "granted" | "denied" | "unavailable"
+  const [geoStatus, setGeoStatus] = useState("idle");
+
   // Initial fetch
   useEffect(() => {
     const fetchEvents = async () => {
-      const { data } = await supabase.from("events").select("id, name, isLocked");
+      const { data } = await supabase.from("events").select("id, name, isLocked, geolocation_mode");
       if (data) setEventList(data);
     };
     const fetchGear = async () => {
@@ -72,6 +76,29 @@ const ControleCoureurs = () => {
     fetchMarshals();
     fetchLocations();
   }, []);
+
+  const requestGeo = () => {
+    if (!navigator.geolocation) {
+      setGeoStatus("unavailable");
+      return;
+    }
+    setGeoStatus("requesting");
+    navigator.geolocation.getCurrentPosition(
+      () => setGeoStatus("granted"),
+      () => setGeoStatus("denied"),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  // Trigger geo permission when event with geo mode is selected
+  useEffect(() => {
+    const mode = eventList.find((e) => e.id.toString() === eventInfo.event_id)?.geolocation_mode || "no";
+    setGeoStatus("idle");
+    if (mode !== "no" && eventInfo.event_id) {
+      requestGeo();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventInfo.event_id]);
 
   // Charger les courses (races) après sélection d'évènement (inclut range_min / range_max)
   useEffect(() => {
@@ -150,6 +177,9 @@ const ControleCoureurs = () => {
   const selectedEvent = eventList.find((e) => e.id.toString() === eventInfo.event_id);
   const selectedRace = raceList.find((r) => r.id.toString() === eventInfo.race_id);
 
+  const geoMode = selectedEvent?.geolocation_mode || "no";
+  const geoBlocked = geoMode === "mandatory" && (geoStatus === "denied" || geoStatus === "unavailable");
+
   // Plage autorisée pour la course sélectionnée
   const allowedMin = selectedRace?.range_min ?? null;
   const allowedMax = selectedRace?.range_max ?? null;
@@ -201,15 +231,32 @@ const ControleCoureurs = () => {
     const isDuplicate = dossardsControles.map((dc) => dc.dossard).includes(form.dossard);
     if (isDuplicate && !window.confirm(t("dupConfirm"))) return;
 
+    // Capture geolocation if needed
+    let coords = null;
+    if (geoMode !== "no" && navigator.geolocation) {
+      coords = await new Promise((resolve) => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+          () => resolve(null),
+          { enableHighAccuracy: true, timeout: 8000 }
+        );
+      });
+      if (geoMode === "mandatory" && !coords) {
+        alert(t("geo.mandatoryBlocked"));
+        return;
+      }
+    }
+
     const data = {
       race_id: eventInfo.race_id,
       location_id: selectedLocation || null,
       marshal_id: eventInfo.marshal_id,
       dossard: form.dossard,
       resultat: form.resultat,
-      // On garde la compat actuelle : si KO, on envoie le FR dans materiel_manquant
-      materiel_manquant: form.resultat === "ko" ? (materielCode === "__autre__" ? form.materielManquant : form.materielManquant) : null,
+      materiel_manquant: form.resultat === "ko" ? form.materielManquant : null,
       commentaire: form.commentaire,
+      latitude: coords?.lat ?? null,
+      longitude: coords?.lng ?? null,
     };
 
     setSyncStatus("syncing");
@@ -314,10 +361,28 @@ const ControleCoureurs = () => {
             ))}
           </select>
 
+          {geoMode !== "no" && (
+            <div className={`p-3 rounded border text-sm ${geoStatus === "denied" || geoStatus === "unavailable" ? "bg-red-50 border-red-300 text-red-700" : geoStatus === "granted" ? "bg-green-50 border-green-300 text-green-700" : "bg-blue-50 border-blue-200 text-blue-700"}`}>
+              {geoStatus === "idle" && t("geo.permissionInfo")}
+              {geoStatus === "requesting" && t("geo.requesting")}
+              {geoStatus === "granted" && t("geo.granted")}
+              {(geoStatus === "denied" || geoStatus === "unavailable") && (
+                <>
+                  <p>{geoMode === "mandatory" ? t("geo.mandatoryBlocked") : t("geo.denied")}</p>
+                  {geoStatus === "denied" && (
+                    <button onClick={requestGeo} className="mt-2 px-3 py-1 bg-blue-600 text-white rounded text-xs">
+                      {t("geo.allowBtn")}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
           <button
-            className="w-full bg-blue-600 text-white py-3 rounded"
+            className="w-full bg-blue-600 text-white py-3 rounded disabled:opacity-50"
             onClick={() => setStep(2)}
-            disabled={!eventInfo.marshal_id || !eventInfo.race_id}
+            disabled={!eventInfo.marshal_id || !eventInfo.race_id || geoBlocked}
           >
             {t("start")}
           </button>

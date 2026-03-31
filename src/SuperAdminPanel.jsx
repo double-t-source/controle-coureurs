@@ -13,8 +13,10 @@ function EventsRacesTab({ t, events, races, onRefreshEvents, onRefreshRaces }) {
   const [expandedId, setExpandedId] = useState(null);
   const [editingEventId, setEditingEventId] = useState(null);
   const [editEventName, setEditEventName] = useState("");
+  const [editGeoMode, setEditGeoMode] = useState("no");
   const [addingEvent, setAddingEvent] = useState(false);
   const [newEventName, setNewEventName] = useState("");
+  const [newGeoMode, setNewGeoMode] = useState("no");
 
   const [editingRaceId, setEditingRaceId] = useState(null);
   const [editRaceForm, setEditRaceForm] = useState({ name: "", range_min: "", range_max: "" });
@@ -28,13 +30,13 @@ function EventsRacesTab({ t, events, races, onRefreshEvents, onRefreshRaces }) {
   const toggleExpand = (id) => setExpandedId(prev => (prev === id ? null : id));
 
   // ── Event CRUD ──
-  const startAddEvent = () => { setAddingEvent(true); setNewEventName(""); setSaveError(""); };
+  const startAddEvent = () => { setAddingEvent(true); setNewEventName(""); setNewGeoMode("no"); setSaveError(""); };
   const cancelAddEvent = () => { setAddingEvent(false); setNewEventName(""); };
 
   const addEvent = async () => {
     const name = newEventName.trim();
     if (!name) return;
-    const { error } = await supabase.from("events").insert({ name, isLocked: false });
+    const { error } = await supabase.from("events").insert({ name, isLocked: false, geolocation_mode: newGeoMode });
     if (error) { setSaveError(t("superAdmin.saveError")); return; }
     setAddingEvent(false);
     setNewEventName("");
@@ -44,13 +46,14 @@ function EventsRacesTab({ t, events, races, onRefreshEvents, onRefreshRaces }) {
   const startEditEvent = (ev) => {
     setEditingEventId(ev.id);
     setEditEventName(ev.name);
+    setEditGeoMode(ev.geolocation_mode || "no");
     setSaveError("");
   };
 
   const saveEvent = async (id) => {
     const name = editEventName.trim();
     if (!name) return;
-    const { error } = await supabase.from("events").update({ name }).eq("id", id);
+    const { error } = await supabase.from("events").update({ name, geolocation_mode: editGeoMode }).eq("id", id);
     if (error) { setSaveError(t("superAdmin.saveError")); return; }
     setEditingEventId(null);
     onRefreshEvents();
@@ -157,15 +160,24 @@ function EventsRacesTab({ t, events, races, onRefreshEvents, onRefreshRaces }) {
       {saveError && <p className="text-xs text-red-600 mb-3">{saveError}</p>}
 
       {addingEvent && (
-        <div className="flex gap-2 mb-4 p-3 bg-blue-50 rounded border">
+        <div className="flex gap-2 mb-4 p-3 bg-blue-50 rounded border flex-wrap">
           <input
-            className="border rounded p-2 flex-1 text-sm"
+            className="border rounded p-2 flex-1 text-sm min-w-40"
             placeholder={t("superAdmin.eventName")}
             value={newEventName}
             onChange={e => setNewEventName(e.target.value)}
             onKeyDown={e => e.key === "Enter" && addEvent()}
             autoFocus
           />
+          <select
+            className="border rounded p-2 text-sm"
+            value={newGeoMode}
+            onChange={e => setNewGeoMode(e.target.value)}
+          >
+            <option value="no">{t("superAdmin.geoModeNo")}</option>
+            <option value="optional">{t("superAdmin.geoModeOptional")}</option>
+            <option value="mandatory">{t("superAdmin.geoModeMandatory")}</option>
+          </select>
           <button onClick={addEvent} className="px-3 py-1 bg-green-600 text-white rounded text-sm">
             {t("superAdmin.save")}
           </button>
@@ -195,12 +207,21 @@ function EventsRacesTab({ t, events, races, onRefreshEvents, onRefreshRaces }) {
               {editingEventId === ev.id ? (
                 <>
                   <input
-                    className="border rounded p-1 flex-1 text-sm"
+                    className="border rounded p-1 flex-1 text-sm min-w-32"
                     value={editEventName}
                     onChange={e => setEditEventName(e.target.value)}
                     onKeyDown={e => e.key === "Enter" && saveEvent(ev.id)}
                     autoFocus
                   />
+                  <select
+                    className="border rounded p-1 text-xs"
+                    value={editGeoMode}
+                    onChange={e => setEditGeoMode(e.target.value)}
+                  >
+                    <option value="no">{t("superAdmin.geoModeNo")}</option>
+                    <option value="optional">{t("superAdmin.geoModeOptional")}</option>
+                    <option value="mandatory">{t("superAdmin.geoModeMandatory")}</option>
+                  </select>
                   <button onClick={() => saveEvent(ev.id)} className="px-2 py-1 bg-green-600 text-white rounded text-xs">
                     {t("superAdmin.save")}
                   </button>
@@ -214,6 +235,11 @@ function EventsRacesTab({ t, events, races, onRefreshEvents, onRefreshRaces }) {
                   <span className={`text-xs px-2 py-0.5 rounded flex-shrink-0 ${ev.isLocked ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
                     {ev.isLocked ? `🔒 ${t("superAdmin.eventLocked")}` : `🔓 ${t("superAdmin.eventUnlocked")}`}
                   </span>
+                  {(ev.geolocation_mode && ev.geolocation_mode !== "no") && (
+                    <span className={`text-xs px-2 py-0.5 rounded flex-shrink-0 ${ev.geolocation_mode === "mandatory" ? "bg-orange-100 text-orange-700" : "bg-blue-100 text-blue-700"}`}>
+                      📍 {t(`superAdmin.geoMode${ev.geolocation_mode.charAt(0).toUpperCase() + ev.geolocation_mode.slice(1)}`)}
+                    </span>
+                  )}
                   <button
                     onClick={() => toggleLock(ev.id, ev.isLocked)}
                     className="px-2 py-1 border rounded text-xs hover:bg-gray-50 flex-shrink-0"
@@ -658,7 +684,7 @@ export default function SuperAdminPanel() {
   };
 
   const fetchEvents = async () => {
-    const { data, error } = await supabase.from("events").select("id, name, isLocked").order("name");
+    const { data, error } = await supabase.from("events").select("id, name, isLocked, geolocation_mode").order("name");
     if (error) { setLoadError(t("superAdmin.loadError")); return; }
     setEvents(data || []);
   };
