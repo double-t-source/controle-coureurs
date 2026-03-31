@@ -544,27 +544,19 @@ function MarshalsTab({ t, marshals, races, onRefresh }) {
   useEffect(() => {
     const fetchStats = async () => {
       const raceEventMap = Object.fromEntries(races.map(r => [r.id, r.event_id]));
-      const raceIds = races.map(r => r.id);
-      const { data } = await supabase
-        .from("controles")
-        .select("marshal_id, race_id")
-        .in("race_id", raceIds);
-      if (!data) return;
-      const raw = {};
-      for (const row of data) {
-        const mid = row.marshal_id;
-        if (!mid) continue;
-        if (!raw[mid]) raw[mid] = { total: 0, events: new Set() };
-        raw[mid].total += 1;
-        const eventId = raceEventMap[row.race_id];
-        if (eventId) raw[mid].events.add(eventId);
-      }
-      const computed = {};
-      for (const [mid, s] of Object.entries(raw)) {
-        const eventCount = s.events.size;
-        computed[mid] = { total: s.total, eventCount, avg: eventCount > 0 ? (s.total / eventCount).toFixed(1) : "-" };
-      }
-      setMarshalStats(computed);
+      const results = await Promise.all(
+        marshals.map(async (m) => {
+          const { data, count } = await supabase
+            .from("controles")
+            .select("race_id", { count: "exact" })
+            .eq("marshal_id", m.id);
+          const eventIds = new Set((data || []).map(r => raceEventMap[r.race_id]).filter(Boolean));
+          const eventCount = eventIds.size;
+          const total = count ?? 0;
+          return { id: m.id, total, eventCount, avg: eventCount > 0 ? (total / eventCount).toFixed(1) : "—" };
+        })
+      );
+      setMarshalStats(Object.fromEntries(results.map(r => [r.id, r])));
     };
     if (races.length > 0) fetchStats();
   }, [marshals, races]);
