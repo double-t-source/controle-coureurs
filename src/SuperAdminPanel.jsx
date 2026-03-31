@@ -544,7 +544,11 @@ function MarshalsTab({ t, marshals, races, onRefresh }) {
   useEffect(() => {
     const fetchStats = async () => {
       const raceEventMap = Object.fromEntries(races.map(r => [r.id, r.event_id]));
-      const { data } = await supabase.from("controles").select("marshal_id, race_id");
+      const raceIds = races.map(r => r.id);
+      const { data } = await supabase
+        .from("controles")
+        .select("marshal_id, race_id")
+        .in("race_id", raceIds);
       if (!data) return;
       const raw = {};
       for (const row of data) {
