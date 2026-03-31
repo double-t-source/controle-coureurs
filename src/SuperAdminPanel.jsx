@@ -539,6 +539,29 @@ function MarshalsTab({ t, marshals, onRefresh }) {
   const [adding, setAdding] = useState(false);
   const [newForm, setNewForm] = useState({ firstName: "", lastName: "" });
   const [error, setError] = useState("");
+  const [marshalStats, setMarshalStats] = useState({});
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      const { data } = await supabase.from("controles").select("marshal_id, races(event_id)");
+      if (!data) return;
+      const raw = {};
+      for (const row of data) {
+        const mid = row.marshal_id;
+        if (!mid) continue;
+        if (!raw[mid]) raw[mid] = { total: 0, events: new Set() };
+        raw[mid].total += 1;
+        if (row.races?.event_id) raw[mid].events.add(row.races.event_id);
+      }
+      const computed = {};
+      for (const [mid, s] of Object.entries(raw)) {
+        const eventCount = s.events.size;
+        computed[mid] = { total: s.total, eventCount, avg: eventCount > 0 ? (s.total / eventCount).toFixed(1) : "-" };
+      }
+      setMarshalStats(computed);
+    };
+    fetchStats();
+  }, [marshals]);
 
   const startEdit = (m) => {
     setEditingId(m.id);
@@ -602,6 +625,9 @@ function MarshalsTab({ t, marshals, onRefresh }) {
             <th className="border p-2 text-left">{t("superAdmin.marshalLastName")}</th>
             <th className="border p-2 text-left">{t("superAdmin.marshalFirstName")}</th>
             <th className="border p-2 text-center w-24">{t("superAdmin.marshalActive")}</th>
+            <th className="border p-2 text-center w-24">{t("superAdmin.marshalTotalControls")}</th>
+            <th className="border p-2 text-center w-24">{t("superAdmin.marshalTotalEvents")}</th>
+            <th className="border p-2 text-center w-28">{t("superAdmin.marshalAvgPerEvent")}</th>
             <th className="border p-2 w-36">{t("superAdmin.actions")}</th>
           </tr>
         </thead>
@@ -615,6 +641,9 @@ function MarshalsTab({ t, marshals, onRefresh }) {
                 <input className="border rounded p-1 w-full text-sm" placeholder={t("superAdmin.marshalFirstName")} value={newForm.firstName} onChange={e => setNewForm(f => ({ ...f, firstName: e.target.value }))} />
               </td>
               <td className="border p-1 text-center text-xs text-gray-400">{t("superAdmin.marshalActive")}</td>
+              <td className="border p-1 text-center text-xs text-gray-300">—</td>
+              <td className="border p-1 text-center text-xs text-gray-300">—</td>
+              <td className="border p-1 text-center text-xs text-gray-300">—</td>
               <td className="border p-1 whitespace-nowrap text-center">
                 <button onClick={addMarshal} className="px-2 py-1 bg-green-600 text-white rounded text-xs mr-1">{t("superAdmin.save")}</button>
                 <button onClick={() => setAdding(false)} className="px-2 py-1 border rounded text-xs">{t("superAdmin.cancel")}</button>
@@ -634,6 +663,9 @@ function MarshalsTab({ t, marshals, onRefresh }) {
                   <td className="border p-1"><input className="border rounded p-1 w-full text-sm" value={editForm.lastName} onChange={e => setEditForm(f => ({ ...f, lastName: e.target.value }))} autoFocus /></td>
                   <td className="border p-1"><input className="border rounded p-1 w-full text-sm" value={editForm.firstName} onChange={e => setEditForm(f => ({ ...f, firstName: e.target.value }))} /></td>
                   <td className="border p-1"></td>
+                  <td className="border p-1 text-center text-sm">{marshalStats[m.id]?.total ?? 0}</td>
+                  <td className="border p-1 text-center text-sm">{marshalStats[m.id]?.eventCount ?? 0}</td>
+                  <td className="border p-1 text-center text-sm">{marshalStats[m.id]?.avg ?? "—"}</td>
                   <td className="border p-1 whitespace-nowrap text-center">
                     <button onClick={() => saveMarshal(m.id)} className="px-2 py-1 bg-green-600 text-white rounded text-xs mr-1">{t("superAdmin.save")}</button>
                     <button onClick={() => setEditingId(null)} className="px-2 py-1 border rounded text-xs">{t("superAdmin.cancel")}</button>
@@ -651,6 +683,9 @@ function MarshalsTab({ t, marshals, onRefresh }) {
                       {m.isActive ? t("superAdmin.marshalActive") : t("superAdmin.marshalInactive")}
                     </button>
                   </td>
+                  <td className="border p-2 text-center text-sm">{marshalStats[m.id]?.total ?? 0}</td>
+                  <td className="border p-2 text-center text-sm">{marshalStats[m.id]?.eventCount ?? 0}</td>
+                  <td className="border p-2 text-center text-sm">{marshalStats[m.id]?.avg ?? "—"}</td>
                   <td className="border p-2 whitespace-nowrap text-center">
                     <button onClick={() => startEdit(m)} className="px-2 py-1 border rounded text-xs mr-1 hover:bg-gray-50">{t("superAdmin.edit")}</button>
                     <button onClick={() => deleteMarshal(m)} className="px-2 py-1 border rounded text-xs text-red-600 hover:bg-red-50">{t("superAdmin.delete")}</button>
@@ -661,7 +696,7 @@ function MarshalsTab({ t, marshals, onRefresh }) {
           ))}
 
           {marshals.length === 0 && !adding && (
-            <tr><td colSpan="4" className="text-center p-4 text-gray-400 text-sm">{t("superAdmin.noMarshals")}</td></tr>
+            <tr><td colSpan="7" className="text-center p-4 text-gray-400 text-sm">{t("superAdmin.noMarshals")}</td></tr>
           )}
         </tbody>
       </table>
