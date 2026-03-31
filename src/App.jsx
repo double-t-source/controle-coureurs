@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import ControleCoureurs from "./ControleCoureurs";
 import AdminControleCoureurs from "./AdminControleCoureurs";
+import SuperAdminPanel from "./SuperAdminPanel";
 import LangSegmented from "./LangSegmented";
 
 export default function App() {
@@ -16,7 +17,7 @@ export default function App() {
 
   return (
     <div>
-      <nav className="p-4 flex items-center gap-4 bg-gray-100 mb-4">
+      <nav className="p-4 flex items-center gap-4 bg-gray-100 mb-4 flex-wrap">
         <button
           onClick={() => setPage("controle")}
           className={`py-2 px-4 rounded ${page === "controle" ? "bg-blue-600 text-white" : "bg-white border"}`}
@@ -29,6 +30,12 @@ export default function App() {
         >
           {t("nav.admin")}
         </button>
+        <button
+          onClick={() => setPage("superadmin")}
+          className={`py-2 px-4 rounded ${page === "superadmin" ? "bg-purple-600 text-white" : "bg-white border"}`}
+        >
+          {t("nav.superAdmin")}
+        </button>
         <div className="ml-auto">
           <LangSegmented value={currentLang} onChange={handleLangChange} />
         </div>
@@ -36,6 +43,7 @@ export default function App() {
 
       {page === "controle" && <ControleCoureurs />}
       {page === "admin" && <AdminControleCoureurs />}
+      {page === "superadmin" && <SuperAdminPanel />}
     </div>
   );
 }
