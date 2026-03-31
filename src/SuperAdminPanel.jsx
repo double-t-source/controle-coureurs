@@ -13,9 +13,11 @@ function EventsRacesTab({ t, events, races, onRefreshEvents, onRefreshRaces }) {
   const [expandedId, setExpandedId] = useState(null);
   const [editingEventId, setEditingEventId] = useState(null);
   const [editEventName, setEditEventName] = useState("");
+  const [editEventDate, setEditEventDate] = useState("");
   const [editGeoMode, setEditGeoMode] = useState("no");
   const [addingEvent, setAddingEvent] = useState(false);
   const [newEventName, setNewEventName] = useState("");
+  const [newEventDate, setNewEventDate] = useState("");
   const [newGeoMode, setNewGeoMode] = useState("no");
 
   const [editingRaceId, setEditingRaceId] = useState(null);
@@ -30,30 +32,32 @@ function EventsRacesTab({ t, events, races, onRefreshEvents, onRefreshRaces }) {
   const toggleExpand = (id) => setExpandedId(prev => (prev === id ? null : id));
 
   // ── Event CRUD ──
-  const startAddEvent = () => { setAddingEvent(true); setNewEventName(""); setNewGeoMode("no"); setSaveError(""); };
-  const cancelAddEvent = () => { setAddingEvent(false); setNewEventName(""); };
+  const startAddEvent = () => { setAddingEvent(true); setNewEventName(""); setNewEventDate(""); setNewGeoMode("no"); setSaveError(""); };
+  const cancelAddEvent = () => { setAddingEvent(false); setNewEventName(""); setNewEventDate(""); };
 
   const addEvent = async () => {
     const name = newEventName.trim();
-    if (!name) return;
-    const { error } = await supabase.from("events").insert({ name, isLocked: false, geolocation_mode: newGeoMode });
-    if (error) { setSaveError(t("superAdmin.saveError")); return; }
+    if (!name || !newEventDate) return;
+    const { error } = await supabase.from("events").insert({ name, date: newEventDate, isLocked: false, geolocation_mode: newGeoMode });
+    if (error) { console.error("Insert event error:", error); setSaveError(t("superAdmin.saveError")); return; }
     setAddingEvent(false);
     setNewEventName("");
+    setNewEventDate("");
     onRefreshEvents();
   };
 
   const startEditEvent = (ev) => {
     setEditingEventId(ev.id);
     setEditEventName(ev.name);
+    setEditEventDate(ev.date || "");
     setEditGeoMode(ev.geolocation_mode || "no");
     setSaveError("");
   };
 
   const saveEvent = async (id) => {
     const name = editEventName.trim();
-    if (!name) return;
-    const { error } = await supabase.from("events").update({ name, geolocation_mode: editGeoMode }).eq("id", id);
+    if (!name || !editEventDate) return;
+    const { error } = await supabase.from("events").update({ name, date: editEventDate, geolocation_mode: editGeoMode }).eq("id", id);
     if (error) { setSaveError(t("superAdmin.saveError")); return; }
     setEditingEventId(null);
     onRefreshEvents();
@@ -169,6 +173,12 @@ function EventsRacesTab({ t, events, races, onRefreshEvents, onRefreshRaces }) {
             onKeyDown={e => e.key === "Enter" && addEvent()}
             autoFocus
           />
+          <input
+            type="date"
+            className="border rounded p-2 text-sm"
+            value={newEventDate}
+            onChange={e => setNewEventDate(e.target.value)}
+          />
           <select
             className="border rounded p-2 text-sm"
             value={newGeoMode}
@@ -192,7 +202,12 @@ function EventsRacesTab({ t, events, races, onRefreshEvents, onRefreshRaces }) {
       )}
 
       <div className="space-y-2">
-        {events.map(ev => (
+        {[...events]
+          .sort((a, b) => {
+            if (a.isLocked !== b.isLocked) return a.isLocked ? 1 : -1;
+            return (b.date || "") > (a.date || "") ? 1 : -1;
+          })
+          .map(ev => (
           <div key={ev.id} className="border rounded overflow-hidden">
             {/* Event row */}
             <div className="flex items-center gap-2 p-3 bg-white">
@@ -213,6 +228,12 @@ function EventsRacesTab({ t, events, races, onRefreshEvents, onRefreshRaces }) {
                     onKeyDown={e => e.key === "Enter" && saveEvent(ev.id)}
                     autoFocus
                   />
+                  <input
+                    type="date"
+                    className="border rounded p-1 text-xs"
+                    value={editEventDate}
+                    onChange={e => setEditEventDate(e.target.value)}
+                  />
                   <select
                     className="border rounded p-1 text-xs"
                     value={editGeoMode}
@@ -231,7 +252,7 @@ function EventsRacesTab({ t, events, races, onRefreshEvents, onRefreshRaces }) {
                 </>
               ) : (
                 <>
-                  <span className="flex-1 font-medium text-sm">{ev.name}</span>
+                  <span className="flex-1 font-medium text-sm">{ev.name}{ev.date && <span className="ml-2 text-xs text-gray-400">{ev.date}</span>}</span>
                   <span className={`text-xs px-2 py-0.5 rounded flex-shrink-0 ${ev.isLocked ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
                     {ev.isLocked ? `🔒 ${t("superAdmin.eventLocked")}` : `🔓 ${t("superAdmin.eventUnlocked")}`}
                   </span>
@@ -601,7 +622,12 @@ function MarshalsTab({ t, marshals, onRefresh }) {
             </tr>
           )}
 
-          {marshals.map(m => (
+          {[...marshals]
+            .sort((a, b) => {
+              if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+              return (a.lastName || "").localeCompare(b.lastName || "");
+            })
+            .map(m => (
             <tr key={m.id} className={`border-t ${!m.isActive ? "opacity-50" : ""}`}>
               {editingId === m.id ? (
                 <>
@@ -684,7 +710,7 @@ export default function SuperAdminPanel() {
   };
 
   const fetchEvents = async () => {
-    const { data, error } = await supabase.from("events").select("id, name, isLocked, geolocation_mode").order("name");
+    const { data, error } = await supabase.from("events").select("id, name, date, isLocked, geolocation_mode").order("name");
     if (error) { setLoadError(t("superAdmin.loadError")); return; }
     setEvents(data || []);
   };

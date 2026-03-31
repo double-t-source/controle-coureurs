@@ -83,7 +83,7 @@ export default function AdminControleCoureurs() {
   useEffect(() => {
     if (!ok) return;
     const fetchEvents = async () => {
-      const { data, error } = await supabase.from("events").select("id, name");
+      const { data, error } = await supabase.from("events").select("id, name, isLocked, date");
       if (!error && data) setEventList(data);
     };
     fetchEvents();
@@ -344,11 +344,16 @@ export default function AdminControleCoureurs() {
       <div className="flex gap-4 mb-6 flex-wrap">
         <select value={eventId} onChange={handleEventChange} className="p-2 border rounded">
           <option value="">{t("admin.chooseEvent")}</option>
-          {eventList.map((e) => (
-            <option key={e.id} value={e.id}>
-              {e.name}
-            </option>
-          ))}
+          {[...eventList]
+            .sort((a, b) => {
+              if (a.isLocked !== b.isLocked) return a.isLocked ? 1 : -1;
+              return (b.date || "") > (a.date || "") ? 1 : -1;
+            })
+            .map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.isLocked ? "🔒 " : ""}{e.name}
+              </option>
+            ))}
         </select>
 
         <select

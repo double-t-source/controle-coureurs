@@ -347,19 +347,21 @@ const ControleCoureurs = () => {
             ))}
           </select>
 
-          <select
-            name="location_id"
-            value={selectedLocation}
-            onChange={(e) => setSelectedLocation(e.target.value)}
-            className="w-full p-3 border rounded-md"
-          >
-            <option value="">-- {t("location")} --</option>
-            {locationList.map((loc) => (
-              <option key={loc.id} value={loc.id}>
-                {loc.name}
-              </option>
-            ))}
-          </select>
+          {!(geoMode !== "no" && geoStatus === "granted") && (
+            <select
+              name="location_id"
+              value={selectedLocation}
+              onChange={(e) => setSelectedLocation(e.target.value)}
+              className="w-full p-3 border rounded-md"
+            >
+              <option value="">-- {t("location")} --</option>
+              {locationList.map((loc) => (
+                <option key={loc.id} value={loc.id}>
+                  {loc.name}
+                </option>
+              ))}
+            </select>
+          )}
 
           {geoMode !== "no" && (
             <div className={`p-3 rounded border text-sm ${geoStatus === "denied" || geoStatus === "unavailable" ? "bg-red-50 border-red-300 text-red-700" : geoStatus === "granted" ? "bg-green-50 border-green-300 text-green-700" : "bg-blue-50 border-blue-200 text-blue-700"}`}>

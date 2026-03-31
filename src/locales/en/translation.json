@@ -37,9 +37,9 @@
     "unavailable": "Geolocation is not available on this device."
   },
   "nav": {
-    "control": "Control",
-    "admin": "Race Control Summary",
-    "superAdmin": "Super Admin"
+    "control": "Checks",
+    "admin": "Command Center Interface",
+    "superAdmin": "Admin Panel"
   },
   "admin": {
     "title": "Control Dashboard",
@@ -54,7 +54,7 @@
     "statsByMarshal": "Statistics by marshal:",
     "unknownMarshal": "Unknown",
     "controls": "controls",
-    "stillKOTitle": "KO Controls (no re-check OK)",
+    "stillKOTitle": "KO Checks (with no OK re-check)",
     "bib": "Bib",
     "missingGear": "Missing gear",
     "comment": "Comment",
@@ -67,7 +67,7 @@
     "lastKOComment": "Last KO — Comment",
     "history": "History",
     "noKOThenOk": "No KO re-checked as OK",
-    "okDirectTitle": "OK Controls (direct)",
+    "okDirectTitle": "OK Checks",
     "lastControl": "Last control",
     "noOKDirect": "No direct OK bibs",
     "showMap": "Map",
