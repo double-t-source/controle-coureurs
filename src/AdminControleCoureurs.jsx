@@ -4,7 +4,7 @@ import { supabase } from "./supabaseClient";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from "react-leaflet";
-import { Map, MapPin } from "lucide-react";
+import { Map as MapIcon, MapPin } from "lucide-react";
 import "leaflet/dist/leaflet.css";
 
 function MapFlyTo({ center }) {
@@ -322,7 +322,7 @@ export default function AdminControleCoureurs() {
               onClick={() => setShowMap((v) => !v)}
               className={`text-sm px-3 py-1 border rounded flex items-center gap-1 ${showMap ? "bg-blue-600 text-white border-blue-600" : "hover:bg-gray-50"}`}
             >
-              <Map size={14} />
+              <MapIcon size={14} />
               {showMap ? t("admin.hideMap") : t("admin.showMap")}
             </button>
           )}
