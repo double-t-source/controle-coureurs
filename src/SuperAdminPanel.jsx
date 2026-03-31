@@ -533,7 +533,7 @@ function GearTab({ t, gear, onRefresh }) {
 
 // ─── Marshals Tab ──────────────────────────────────────────────────────────
 
-function MarshalsTab({ t, marshals, onRefresh }) {
+function MarshalsTab({ t, marshals, races, onRefresh }) {
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ firstName: "", lastName: "" });
   const [adding, setAdding] = useState(false);
@@ -543,7 +543,8 @@ function MarshalsTab({ t, marshals, onRefresh }) {
 
   useEffect(() => {
     const fetchStats = async () => {
-      const { data } = await supabase.from("controles").select("marshal_id, races(event_id)");
+      const raceEventMap = Object.fromEntries(races.map(r => [r.id, r.event_id]));
+      const { data } = await supabase.from("controles").select("marshal_id, race_id");
       if (!data) return;
       const raw = {};
       for (const row of data) {
@@ -551,7 +552,8 @@ function MarshalsTab({ t, marshals, onRefresh }) {
         if (!mid) continue;
         if (!raw[mid]) raw[mid] = { total: 0, events: new Set() };
         raw[mid].total += 1;
-        if (row.races?.event_id) raw[mid].events.add(row.races.event_id);
+        const eventId = raceEventMap[row.race_id];
+        if (eventId) raw[mid].events.add(eventId);
       }
       const computed = {};
       for (const [mid, s] of Object.entries(raw)) {
@@ -560,8 +562,8 @@ function MarshalsTab({ t, marshals, onRefresh }) {
       }
       setMarshalStats(computed);
     };
-    fetchStats();
-  }, [marshals]);
+    if (races.length > 0) fetchStats();
+  }, [marshals, races]);
 
   const startEdit = (m) => {
     setEditingId(m.id);
@@ -825,7 +827,7 @@ export default function SuperAdminPanel() {
             <GearTab t={t} gear={gear} onRefresh={fetchGear} />
           )}
           {activeTab === "marshals" && (
-            <MarshalsTab t={t} marshals={marshals} onRefresh={fetchMarshals} />
+            <MarshalsTab t={t} marshals={marshals} races={races} onRefresh={fetchMarshals} />
           )}
         </>
       )}
