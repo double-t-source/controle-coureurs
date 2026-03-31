@@ -276,10 +276,7 @@ const ControleCoureurs = () => {
     navigator.vibrate && navigator.vibrate(30);
     setForm({ dossard: "", resultat: "ok", materielManquant: "", commentaire: "" });
     setMaterielCode("");
-    setTimeout(() => {
-      setSubmitted(false);
-      setTimeout(() => dossardRef.current?.focus(), 100);
-    }, 500);
+    setTimeout(() => setSubmitted(false), 500);
   };
 
   const getButtonClass = (selected, value) =>
@@ -504,6 +501,7 @@ const ControleCoureurs = () => {
 
             <button
               type="submit"
+              onClick={() => dossardRef.current?.focus()}
               className="w-full bg-blue-600 text-white py-3 rounded text-lg"
               disabled={selectedEvent?.isLocked}
             >
