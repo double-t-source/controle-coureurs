@@ -61,6 +61,7 @@ export default function AdminControleCoureurs() {
   const [raceList, setRaceList] = useState([]);
   const [controles, setControles] = useState([]);
   const [marshals, setMarshals] = useState({});
+  const [gearOptions, setGearOptions] = useState([]);
 
   // Statut connexion
   const [connectionStatus, setConnectionStatus] = useState("checking"); // 'online' | 'offline' | 'checking'
@@ -87,6 +88,16 @@ export default function AdminControleCoureurs() {
       if (!error && data) setEventList(data);
     };
     fetchEvents();
+  }, [ok]);
+
+  // Charger équipements (uniquement si logué)
+  useEffect(() => {
+    if (!ok) return;
+    const fetchGear = async () => {
+      const { data, error } = await supabase.from("gear").select("code, label_fr, label_en");
+      if (!error && data) setGearOptions(data);
+    };
+    fetchGear();
   }, [ok]);
 
   // Charger commissaires (uniquement si logué)
@@ -184,6 +195,14 @@ export default function AdminControleCoureurs() {
   }, {});
   const getAttentionEmoji = (dossard) => (countByDossard[dossard] > 1 ? "⚠️ " : "");
 
+  const currentLang = (i18n.resolvedLanguage || i18n.language).slice(0, 2);
+  const labelForGear = (value) => {
+    if (!value) return "-";
+    const g = gearOptions.find((x) => x.code === value);
+    if (!g) return value; // texte libre ou ancienne valeur FR
+    return currentLang === "fr" ? (g.label_fr || g.code) : (g.label_en || g.label_fr || g.code);
+  };
+
   const formatDate = (timestamp) =>
     new Date(timestamp).toLocaleString(i18n.language, {
       day: "2-digit",
@@ -265,7 +284,7 @@ export default function AdminControleCoureurs() {
       body: controles.map((c) => [
         c.dossard,
         c.resultat?.toUpperCase() || "-",
-        c.materiel_manquant || "-",
+        labelForGear(c.materiel_manquant),
         c.commentaire || "-",
         marshals[c.marshal_id] || "?",
         formatDate(c.created_at),
@@ -425,7 +444,7 @@ export default function AdminControleCoureurs() {
                       </button>
                     )}
                   </td>
-                  <td className="border p-2">{s.last?.materiel_manquant || "-"}</td>
+                  <td className="border p-2">{labelForGear(s.last?.materiel_manquant)}</td>
                   <td className="border p-2">{s.last?.commentaire || "-"}</td>
                   <td className="border p-2 whitespace-nowrap">{formatDate(s.lastAt)}</td>
                 </tr>
@@ -470,7 +489,7 @@ export default function AdminControleCoureurs() {
                   </td>
                   <td className="border p-2 whitespace-nowrap">{formatDate(s.lastAt)}</td>
                   <td className="border p-2">{marshals[s.lastMarshalId] || "?"}</td>
-                  <td className="border p-2">{s.lastKO?.materiel_manquant || "-"}</td>
+                  <td className="border p-2">{labelForGear(s.lastKO?.materiel_manquant)}</td>
                   <td className="border p-2">{s.lastKO?.commentaire || "-"}</td>
                   <td className="border p-2">
                     {s.history.map(h => (h.resultat === "ok" ? "✅" : "❌")).join(" → ")}

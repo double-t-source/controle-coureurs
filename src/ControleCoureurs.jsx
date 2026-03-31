@@ -198,7 +198,7 @@ const ControleCoureurs = () => {
       setForm((prev) => ({ ...prev, materielManquant: "" }));
     } else {
       const g = gearOptions.find((x) => x.code === code);
-      setForm((prev) => ({ ...prev, materielManquant: g ? (g.label_fr || g.code) : "" }));
+      setForm((prev) => ({ ...prev, materielManquant: g ? g.code : "" }));
     }
   };
 
