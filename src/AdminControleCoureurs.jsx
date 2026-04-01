@@ -4,7 +4,7 @@ import { supabase } from "./supabaseClient";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from "react-leaflet";
-import { Map as MapIcon, MapPin } from "lucide-react";
+import { Map as MapIcon, MapPin, MessageSquare, Pencil } from "lucide-react";
 import "leaflet/dist/leaflet.css";
 
 function MapFlyTo({ center }) {
@@ -69,6 +69,12 @@ export default function AdminControleCoureurs() {
   // Map panel
   const [showMap, setShowMap] = useState(false);
   const [selectedControleId, setSelectedControleId] = useState(null);
+
+  // Commentaires internes (par dossard)
+  const [internalComments, setInternalComments] = useState({});
+  const [editingDossard, setEditingDossard] = useState(null);
+  const [editValue, setEditValue] = useState("");
+  const [savingDossard, setSavingDossard] = useState(null);
 
   // Vérif connexion DB (uniquement si logué)
   useEffect(() => {
@@ -164,6 +170,23 @@ export default function AdminControleCoureurs() {
       interval = setInterval(fetchControles, 5000);
     }
     return () => clearInterval(interval);
+  }, [ok, raceId]);
+
+  // Charger les commentaires internes quand la course change
+  useEffect(() => {
+    if (!ok || !raceId) { setInternalComments({}); return; }
+    const fetchInternalComments = async () => {
+      const { data, error } = await supabase
+        .from("commentaires_internes")
+        .select("dossard, texte")
+        .eq("race_id", raceId);
+      if (!error && data) {
+        const map = {};
+        data.forEach((r) => (map[r.dossard] = r.texte));
+        setInternalComments(map);
+      }
+    };
+    fetchInternalComments();
   }, [ok, raceId]);
 
   // Handlers sélection
@@ -311,11 +334,102 @@ export default function AdminControleCoureurs() {
     ? [selectedControle.latitude, selectedControle.longitude]
     : null;
 
+  const saveInternalComment = async (dossard) => {
+    setSavingDossard(dossard);
+    const { error } = await supabase
+      .from("commentaires_internes")
+      .upsert(
+        { race_id: parseInt(raceId), dossard, texte: editValue, updated_at: new Date().toISOString() },
+        { onConflict: "race_id,dossard" }
+      );
+    if (!error) {
+      setInternalComments((prev) => ({ ...prev, [dossard]: editValue }));
+      setEditingDossard(null);
+    }
+    setSavingDossard(null);
+  };
+
   const handleRowClick = (controleId) => setSelectedControleId(controleId);
   const handleMapIconClick = (e, controleId) => {
     e.stopPropagation();
     setSelectedControleId(controleId);
     setShowMap(true);
+  };
+
+  // Icône de commentaire commissaire avec tooltip au survol
+  const CommentTooltip = ({ history }) => {
+    const comments = history.filter((h) => h.commentaire?.trim());
+    if (comments.length === 0) return <span className="text-gray-300 text-xs">—</span>;
+    return (
+      <div className="relative group inline-flex items-center justify-center">
+        <button className="flex items-center gap-0.5 text-blue-500 hover:text-blue-700">
+          <MessageSquare size={14} />
+          {comments.length > 1 && (
+            <span className="text-xs font-bold leading-none">{comments.length}</span>
+          )}
+        </button>
+        <div className="pointer-events-none absolute z-30 hidden group-hover:block bottom-full left-1/2 -translate-x-1/2 mb-1 w-64 bg-gray-800 text-white text-xs rounded p-2 shadow-xl text-left whitespace-normal">
+          {comments.map((h, i) => (
+            <div key={h.id} className={i > 0 ? "mt-1.5 pt-1.5 border-t border-gray-600" : ""}>
+              <div className="opacity-60 mb-0.5">{formatDate(h.created_at)}</div>
+              <div className="break-words">{h.commentaire}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // Cellule de note interne éditable
+  const InternalCommentCell = ({ dossard }) => {
+    const current = internalComments[dossard] || "";
+    const isEditing = editingDossard === dossard;
+    if (isEditing) {
+      return (
+        <div onClick={(e) => e.stopPropagation()} className="min-w-[120px]">
+          <textarea
+            className="w-full border rounded p-1 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-blue-400"
+            rows={2}
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Escape") setEditingDossard(null); }}
+            autoFocus
+            placeholder={t("admin.internalCommentPlaceholder")}
+          />
+          <div className="flex gap-1 mt-0.5">
+            <button
+              onClick={() => saveInternalComment(dossard)}
+              disabled={savingDossard === dossard}
+              className="text-xs px-1.5 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+            >
+              {savingDossard === dossard ? "…" : t("admin.save")}
+            </button>
+            <button
+              onClick={() => setEditingDossard(null)}
+              className="text-xs px-1.5 py-0.5 border rounded hover:bg-gray-50"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div
+        onClick={(e) => { e.stopPropagation(); setEditingDossard(dossard); setEditValue(current); }}
+        className="cursor-pointer min-h-[1.5rem] flex items-start gap-1 group min-w-[80px]"
+        title={t("admin.editInternalComment")}
+      >
+        {current ? (
+          <span className="text-xs text-gray-700 flex-1 break-words">{current}</span>
+        ) : (
+          <span className="text-xs text-gray-300 group-hover:text-gray-500 italic flex-1">
+            {t("admin.internalCommentEmpty")}
+          </span>
+        )}
+        <Pencil size={10} className="text-gray-300 group-hover:text-gray-500 flex-shrink-0 mt-0.5" />
+      </div>
+    );
   };
 
   return (
@@ -424,7 +538,8 @@ export default function AdminControleCoureurs() {
               <tr className="bg-red-100">
                 <th className="border p-2">{t("admin.bib")}</th>
                 <th className="border p-2">{t("admin.missingGear")}</th>
-                <th className="border p-2">{t("admin.comment")}</th>
+                <th className="border p-2 w-8" title={t("admin.comment")}><MessageSquare size={14} className="mx-auto" /></th>
+                <th className="border p-2">{t("admin.internalComment")}</th>
                 <th className="border p-2">{t("admin.dateTime")}</th>
               </tr>
             </thead>
@@ -445,13 +560,14 @@ export default function AdminControleCoureurs() {
                     )}
                   </td>
                   <td className="border p-2">{labelForGear(s.last?.materiel_manquant)}</td>
-                  <td className="border p-2">{s.last?.commentaire || "-"}</td>
+                  <td className="border p-2 text-center"><CommentTooltip history={s.history} /></td>
+                  <td className="border p-2"><InternalCommentCell dossard={s.dossard} /></td>
                   <td className="border p-2 whitespace-nowrap">{formatDate(s.lastAt)}</td>
                 </tr>
               ))}
               {bibGroups.stillKO.length === 0 && (
                 <tr>
-                  <td colSpan="4" className="text-center p-2">
+                  <td colSpan="5" className="text-center p-2">
                     {t("admin.noKORemaining")}
                   </td>
                 </tr>
@@ -468,7 +584,8 @@ export default function AdminControleCoureurs() {
                 <th className="border p-2">{t("admin.lastOkControl")}</th>
                 <th className="border p-2">{t("admin.marshal")}</th>
                 <th className="border p-2">{t("admin.lastKOMaterial")}</th>
-                <th className="border p-2">{t("admin.lastKOComment")}</th>
+                <th className="border p-2 w-8" title={t("admin.lastKOComment")}><MessageSquare size={14} className="mx-auto" /></th>
+                <th className="border p-2">{t("admin.internalComment")}</th>
                 <th className="border p-2">{t("admin.history")}</th>
               </tr>
             </thead>
@@ -490,7 +607,8 @@ export default function AdminControleCoureurs() {
                   <td className="border p-2 whitespace-nowrap">{formatDate(s.lastAt)}</td>
                   <td className="border p-2">{marshals[s.lastMarshalId] || "?"}</td>
                   <td className="border p-2">{labelForGear(s.lastKO?.materiel_manquant)}</td>
-                  <td className="border p-2">{s.lastKO?.commentaire || "-"}</td>
+                  <td className="border p-2 text-center"><CommentTooltip history={s.history} /></td>
+                  <td className="border p-2"><InternalCommentCell dossard={s.dossard} /></td>
                   <td className="border p-2">
                     {s.history.map(h => (h.resultat === "ok" ? "✅" : "❌")).join(" → ")}
                   </td>
@@ -498,7 +616,7 @@ export default function AdminControleCoureurs() {
               ))}
               {bibGroups.koThenOk.length === 0 && (
                 <tr>
-                  <td colSpan="6" className="text-center p-2">
+                  <td colSpan="7" className="text-center p-2">
                     {t("admin.noKOThenOk")}
                   </td>
                 </tr>
@@ -514,6 +632,7 @@ export default function AdminControleCoureurs() {
                 <th className="border p-2">{t("admin.bib")}</th>
                 <th className="border p-2">{t("admin.lastControl")}</th>
                 <th className="border p-2">{t("admin.marshal")}</th>
+                <th className="border p-2">{t("admin.internalComment")}</th>
                 <th className="border p-2">{t("admin.history")}</th>
               </tr>
             </thead>
@@ -534,6 +653,7 @@ export default function AdminControleCoureurs() {
                   </td>
                   <td className="border p-2 whitespace-nowrap">{formatDate(s.lastAt)}</td>
                   <td className="border p-2">{marshals[s.lastMarshalId] || "?"}</td>
+                  <td className="border p-2"><InternalCommentCell dossard={s.dossard} /></td>
                   <td className="border p-2">
                     {s.history.map(h => (h.resultat === "ok" ? "✅" : "❌")).join(" → ")}
                   </td>
@@ -541,7 +661,7 @@ export default function AdminControleCoureurs() {
               ))}
               {bibGroups.okDirect.length === 0 && (
                 <tr>
-                  <td colSpan="4" className="text-center p-2">{t("admin.noOKDirect")}</td>
+                  <td colSpan="5" className="text-center p-2">{t("admin.noOKDirect")}</td>
                 </tr>
               )}
             </tbody>

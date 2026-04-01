@@ -93,7 +93,12 @@
     "authEnter": "Entrer",
     "authHashMissing": "Attention : VITE_ADMIN_PW_HASH n'est pas défini côté build.",
     "authWrongPw": "Mot de passe incorrect",
-    "authHashMissingAlert": "Configuration manquante : VITE_ADMIN_PW_HASH n'est pas défini."
+    "authHashMissingAlert": "Configuration manquante : VITE_ADMIN_PW_HASH n'est pas défini.",
+    "internalComment": "Note interne",
+    "internalCommentPlaceholder": "Ajouter une note...",
+    "internalCommentEmpty": "Ajouter...",
+    "editInternalComment": "Cliquer pour modifier la note interne",
+    "save": "Enregistrer"
   },
   "superAdmin": {
     "title": "Super Administration",
