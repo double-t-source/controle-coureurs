@@ -94,6 +94,8 @@
     "authHashMissing": "Warning: VITE_ADMIN_PW_HASH is not set in the build.",
     "authWrongPw": "Incorrect password",
     "authHashMissingAlert": "Missing configuration: VITE_ADMIN_PW_HASH is not set.",
+    "searchBibPlaceholder": "Search bib...",
+    "searchClear": "Clear search",
     "internalComment": "Internal note",
     "internalCommentPlaceholder": "Add a note...",
     "internalCommentEmpty": "Add...",

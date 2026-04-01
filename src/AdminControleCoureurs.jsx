@@ -70,6 +70,9 @@ export default function AdminControleCoureurs() {
   const [showMap, setShowMap] = useState(false);
   const [selectedControleId, setSelectedControleId] = useState(null);
 
+  // Recherche dossard
+  const [searchBib, setSearchBib] = useState("");
+
   // Commentaires internes (par dossard)
   const [internalComments, setInternalComments] = useState({});
   const [editingDossard, setEditingDossard] = useState(null);
@@ -204,6 +207,7 @@ export default function AdminControleCoureurs() {
     const val = e.target.value;
     setRaceId(val);
     setSelectedControleId(null);
+    setSearchBib("");
     if (val) localStorage.setItem("admin_race_id", val);
     else localStorage.removeItem("admin_race_id");
   };
@@ -354,6 +358,19 @@ export default function AdminControleCoureurs() {
     e.stopPropagation();
     setSelectedControleId(controleId);
     setShowMap(true);
+  };
+
+  const bibFilter = searchBib.trim();
+  const filteredGroups = {
+    stillKO: bibFilter
+      ? bibGroups.stillKO.filter((s) => s.dossard.toString().includes(bibFilter))
+      : bibGroups.stillKO,
+    koThenOk: bibFilter
+      ? bibGroups.koThenOk.filter((s) => s.dossard.toString().includes(bibFilter))
+      : bibGroups.koThenOk,
+    okDirect: bibFilter
+      ? bibGroups.okDirect.filter((s) => s.dossard.toString().includes(bibFilter))
+      : bibGroups.okDirect,
   };
 
   // Icône de commentaire commissaire avec tooltip au survol
@@ -511,6 +528,29 @@ export default function AdminControleCoureurs() {
             <strong>{getRaceName(raceId)}</strong>
           </p>
 
+          {/* Recherche dossard */}
+          <div className="mb-6">
+            <div className="relative max-w-xs">
+              <input
+                type="search"
+                inputMode="numeric"
+                value={searchBib}
+                onChange={(e) => setSearchBib(e.target.value.trim())}
+                placeholder={t("admin.searchBibPlaceholder")}
+                className="w-full border rounded p-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              />
+              {searchBib && (
+                <button
+                  onClick={() => setSearchBib("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg leading-none"
+                  aria-label={t("admin.searchClear")}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* Statistiques par commissaire */}
           <div className="mb-6">
             <h3 className="text-sm font-semibold mb-2">{t("admin.statsByMarshal")}</h3>
@@ -544,7 +584,7 @@ export default function AdminControleCoureurs() {
               </tr>
             </thead>
             <tbody>
-              {bibGroups.stillKO.map((s) => (
+              {filteredGroups.stillKO.map((s) => (
                 <tr
                   key={s.dossard}
                   className={`border-t cursor-pointer ${selectedControleId === s.last?.id ? "bg-orange-50" : "hover:bg-gray-50"}`}
@@ -565,7 +605,7 @@ export default function AdminControleCoureurs() {
                   <td className="border p-2 whitespace-nowrap">{formatDate(s.lastAt)}</td>
                 </tr>
               ))}
-              {bibGroups.stillKO.length === 0 && (
+              {filteredGroups.stillKO.length === 0 && (
                 <tr>
                   <td colSpan="5" className="text-center p-2">
                     {t("admin.noKORemaining")}
@@ -590,7 +630,7 @@ export default function AdminControleCoureurs() {
               </tr>
             </thead>
             <tbody>
-              {bibGroups.koThenOk.map((s) => (
+              {filteredGroups.koThenOk.map((s) => (
                 <tr
                   key={s.dossard}
                   className={`border-t cursor-pointer ${selectedControleId === s.last?.id ? "bg-orange-50" : "hover:bg-gray-50"}`}
@@ -614,7 +654,7 @@ export default function AdminControleCoureurs() {
                   </td>
                 </tr>
               ))}
-              {bibGroups.koThenOk.length === 0 && (
+              {filteredGroups.koThenOk.length === 0 && (
                 <tr>
                   <td colSpan="7" className="text-center p-2">
                     {t("admin.noKOThenOk")}
@@ -637,7 +677,7 @@ export default function AdminControleCoureurs() {
               </tr>
             </thead>
             <tbody>
-              {bibGroups.okDirect.map((s) => (
+              {filteredGroups.okDirect.map((s) => (
                 <tr
                   key={s.dossard}
                   className={`border-t cursor-pointer ${selectedControleId === s.last?.id ? "bg-orange-50" : "hover:bg-gray-50"}`}
@@ -659,7 +699,7 @@ export default function AdminControleCoureurs() {
                   </td>
                 </tr>
               ))}
-              {bibGroups.okDirect.length === 0 && (
+              {filteredGroups.okDirect.length === 0 && (
                 <tr>
                   <td colSpan="5" className="text-center p-2">{t("admin.noOKDirect")}</td>
                 </tr>

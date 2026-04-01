@@ -94,6 +94,8 @@
     "authHashMissing": "Attention : VITE_ADMIN_PW_HASH n'est pas défini côté build.",
     "authWrongPw": "Mot de passe incorrect",
     "authHashMissingAlert": "Configuration manquante : VITE_ADMIN_PW_HASH n'est pas défini.",
+    "searchBibPlaceholder": "Rechercher un dossard...",
+    "searchClear": "Effacer la recherche",
     "internalComment": "Note interne",
     "internalCommentPlaceholder": "Ajouter une note...",
     "internalCommentEmpty": "Ajouter...",
