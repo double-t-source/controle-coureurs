@@ -32,6 +32,7 @@ const ControleCoureurs = () => {
   const [dossardsControles, setDossardsControles] = useState([]);
   const [gearOptions, setGearOptions] = useState([]);
   const [duplicateInfo, setDuplicateInfo] = useState(null);
+  const [koError, setKoError] = useState(false);
   const [marshalNames, setMarshalNames] = useState({});
   const dossardRef = useRef(null);
   const [locationList, setLocationList] = useState([]);
@@ -164,6 +165,9 @@ const ControleCoureurs = () => {
       const found = dossardsControles.find((c) => c.dossard === value);
       setDuplicateInfo(found || null);
     }
+    if ((name === "commentaire" && value.trim()) || (name === "materielManquant" && value.trim())) {
+      setKoError(false);
+    }
   };
 
   const handleClear = () => {
@@ -199,6 +203,7 @@ const ControleCoureurs = () => {
     } else {
       const g = gearOptions.find((x) => x.code === code);
       setForm((prev) => ({ ...prev, materielManquant: g ? g.code : "" }));
+      if (code) setKoError(false);
     }
   };
 
@@ -226,6 +231,11 @@ const ControleCoureurs = () => {
         alert(t("bibOutOfRange"));
         return;
       }
+    }
+
+    if (form.resultat === "ko" && !form.materielManquant.trim() && !form.commentaire.trim()) {
+      setKoError(true);
+      return;
     }
 
     const isDuplicate = dossardsControles.map((dc) => dc.dossard).includes(form.dossard);
@@ -276,6 +286,7 @@ const ControleCoureurs = () => {
     navigator.vibrate && navigator.vibrate(30);
     setForm({ dossard: "", resultat: "ok", materielManquant: "", commentaire: "" });
     setMaterielCode("");
+    setKoError(false);
     setTimeout(() => setSubmitted(false), 500);
   };
 
@@ -443,7 +454,7 @@ const ControleCoureurs = () => {
             <div className="grid grid-cols-2 gap-4">
               <button
                 type="button"
-                onClick={() => setForm({ ...form, resultat: "ok" })}
+                onClick={() => { setForm({ ...form, resultat: "ok" }); setKoError(false); }}
                 className={`p-4 rounded font-bold text-xl ${getButtonClass(form.resultat, "ok")}`}
                 disabled={selectedEvent?.isLocked}
               >
@@ -465,7 +476,7 @@ const ControleCoureurs = () => {
                   name="materielCode"
                   value={materielCode}
                   onChange={handleGearSelect}
-                  className="w-full p-3 border rounded-md"
+                  className={`w-full p-3 border rounded-md ${koError && !form.materielManquant.trim() && !form.commentaire.trim() ? "border-red-500" : ""}`}
                   disabled={selectedEvent?.isLocked}
                 >
                   <option value="">{`-- ${t("missingGear")} --`}</option>
@@ -490,12 +501,16 @@ const ControleCoureurs = () => {
               </>
             )}
 
+            {koError && (
+              <p className="text-sm text-red-600 font-medium">{t("koRequiredMsg")}</p>
+            )}
+
             <textarea
               name="commentaire"
               placeholder={t("comment")}
               value={form.commentaire}
               onChange={handleFormChange}
-              className="w-full p-3 border rounded-md"
+              className={`w-full p-3 border rounded-md ${koError && !form.commentaire.trim() && !form.materielManquant.trim() ? "border-red-500" : ""}`}
               disabled={selectedEvent?.isLocked}
             />
 

@@ -23,6 +23,7 @@
   "dupConfirm": "⚠️ This bib was already checked. Continue?",
   "allowedRange": "Allowed range: {{min}} – {{max}}",
   "bibOutOfRange": "Bib number out of range for this race.",
+  "koRequiredMsg": "For a KO, please select a missing gear item or enter a comment.",
   "geo": {
     "modeNo": "Disabled",
     "modeOptional": "Optional (bypassable)",
