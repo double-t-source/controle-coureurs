@@ -21,6 +21,55 @@ async function sha256Hex(s) {
   return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
+function InternalCommentCell({ dossard, current, isEditing, editValue, setEditValue, setEditingDossard, savingDossard, saveInternalComment, t }) {
+  if (isEditing) {
+    return (
+      <div onClick={(e) => e.stopPropagation()} className="min-w-[120px]">
+        <textarea
+          className="w-full border rounded p-1 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-blue-400"
+          rows={2}
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Escape") setEditingDossard(null); }}
+          autoFocus
+          placeholder={t("admin.internalCommentPlaceholder")}
+        />
+        <div className="flex gap-1 mt-0.5">
+          <button
+            onClick={() => saveInternalComment(dossard)}
+            disabled={savingDossard === dossard}
+            className="text-xs px-1.5 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+          >
+            {savingDossard === dossard ? "…" : t("admin.save")}
+          </button>
+          <button
+            onClick={() => setEditingDossard(null)}
+            className="text-xs px-1.5 py-0.5 border rounded hover:bg-gray-50"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div
+      onClick={(e) => { e.stopPropagation(); setEditingDossard(dossard); setEditValue(current); }}
+      className="cursor-pointer min-h-[1.5rem] flex items-start gap-1 group min-w-[80px]"
+      title={t("admin.editInternalComment")}
+    >
+      {current ? (
+        <span className="text-xs text-gray-700 flex-1 break-words">{current}</span>
+      ) : (
+        <span className="text-xs text-gray-300 group-hover:text-gray-500 italic flex-1">
+          {t("admin.internalCommentEmpty")}
+        </span>
+      )}
+      <Pencil size={10} className="text-gray-300 group-hover:text-gray-500 flex-shrink-0 mt-0.5" />
+    </div>
+  );
+}
+
 export default function AdminControleCoureurs() {
   const { t, i18n } = useTranslation();
 
@@ -397,57 +446,6 @@ export default function AdminControleCoureurs() {
     );
   };
 
-  // Cellule de note interne éditable
-  const InternalCommentCell = ({ dossard }) => {
-    const current = internalComments[dossard] || "";
-    const isEditing = editingDossard === dossard;
-    if (isEditing) {
-      return (
-        <div onClick={(e) => e.stopPropagation()} className="min-w-[120px]">
-          <textarea
-            className="w-full border rounded p-1 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-blue-400"
-            rows={2}
-            value={editValue}
-            onChange={(e) => setEditValue(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Escape") setEditingDossard(null); }}
-            autoFocus
-            placeholder={t("admin.internalCommentPlaceholder")}
-          />
-          <div className="flex gap-1 mt-0.5">
-            <button
-              onClick={() => saveInternalComment(dossard)}
-              disabled={savingDossard === dossard}
-              className="text-xs px-1.5 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-            >
-              {savingDossard === dossard ? "…" : t("admin.save")}
-            </button>
-            <button
-              onClick={() => setEditingDossard(null)}
-              className="text-xs px-1.5 py-0.5 border rounded hover:bg-gray-50"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-      );
-    }
-    return (
-      <div
-        onClick={(e) => { e.stopPropagation(); setEditingDossard(dossard); setEditValue(current); }}
-        className="cursor-pointer min-h-[1.5rem] flex items-start gap-1 group min-w-[80px]"
-        title={t("admin.editInternalComment")}
-      >
-        {current ? (
-          <span className="text-xs text-gray-700 flex-1 break-words">{current}</span>
-        ) : (
-          <span className="text-xs text-gray-300 group-hover:text-gray-500 italic flex-1">
-            {t("admin.internalCommentEmpty")}
-          </span>
-        )}
-        <Pencil size={10} className="text-gray-300 group-hover:text-gray-500 flex-shrink-0 mt-0.5" />
-      </div>
-    );
-  };
 
   return (
     <div className={`p-4 ${showMap ? "" : "max-w-4xl mx-auto"}`}>
@@ -601,7 +599,7 @@ export default function AdminControleCoureurs() {
                   </td>
                   <td className="border p-2">{labelForGear(s.last?.materiel_manquant)}</td>
                   <td className="border p-2 text-center"><CommentTooltip history={s.history} /></td>
-                  <td className="border p-2"><InternalCommentCell dossard={s.dossard} /></td>
+                  <td className="border p-2"><InternalCommentCell dossard={s.dossard} current={internalComments[s.dossard] || ""} isEditing={editingDossard === s.dossard} editValue={editValue} setEditValue={setEditValue} setEditingDossard={setEditingDossard} savingDossard={savingDossard} saveInternalComment={saveInternalComment} t={t} /></td>
                   <td className="border p-2 whitespace-nowrap">{formatDate(s.lastAt)}</td>
                 </tr>
               ))}
@@ -648,7 +646,7 @@ export default function AdminControleCoureurs() {
                   <td className="border p-2">{marshals[s.lastMarshalId] || "?"}</td>
                   <td className="border p-2">{labelForGear(s.lastKO?.materiel_manquant)}</td>
                   <td className="border p-2 text-center"><CommentTooltip history={s.history} /></td>
-                  <td className="border p-2"><InternalCommentCell dossard={s.dossard} /></td>
+                  <td className="border p-2"><InternalCommentCell dossard={s.dossard} current={internalComments[s.dossard] || ""} isEditing={editingDossard === s.dossard} editValue={editValue} setEditValue={setEditValue} setEditingDossard={setEditingDossard} savingDossard={savingDossard} saveInternalComment={saveInternalComment} t={t} /></td>
                   <td className="border p-2">
                     {s.history.map(h => (h.resultat === "ok" ? "✅" : "❌")).join(" → ")}
                   </td>
@@ -693,7 +691,7 @@ export default function AdminControleCoureurs() {
                   </td>
                   <td className="border p-2 whitespace-nowrap">{formatDate(s.lastAt)}</td>
                   <td className="border p-2">{marshals[s.lastMarshalId] || "?"}</td>
-                  <td className="border p-2"><InternalCommentCell dossard={s.dossard} /></td>
+                  <td className="border p-2"><InternalCommentCell dossard={s.dossard} current={internalComments[s.dossard] || ""} isEditing={editingDossard === s.dossard} editValue={editValue} setEditValue={setEditValue} setEditingDossard={setEditingDossard} savingDossard={savingDossard} saveInternalComment={saveInternalComment} t={t} /></td>
                   <td className="border p-2">
                     {s.history.map(h => (h.resultat === "ok" ? "✅" : "❌")).join(" → ")}
                   </td>
