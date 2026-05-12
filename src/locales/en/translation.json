@@ -167,6 +167,11 @@
     "gearAssignments": "Mandatory gear",
     "noActiveMarshal": "No active marshals.",
     "selectAll": "Select all",
-    "unselectAll": "Unselect all"
+    "unselectAll": "Unselect all",
+    "purge": "Purge",
+    "purgeConfirm": "Delete all controls for race \"{{name}}\" ({{count}} total)? This action cannot be undone.",
+    "purgePasswordPrompt": "Enter the super-admin password to confirm purging \"{{name}}\".",
+    "purgeConfirmBtn": "Confirm purge",
+    "purgeWrongPw": "Incorrect password."
   }
 }

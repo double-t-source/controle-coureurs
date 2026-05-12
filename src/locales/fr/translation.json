@@ -167,6 +167,11 @@
     "gearAssignments": "Équipement obligatoire",
     "noActiveMarshal": "Aucun commissaire actif.",
     "selectAll": "Tout sélectionner",
-    "unselectAll": "Tout désélectionner"
+    "unselectAll": "Tout désélectionner",
+    "purge": "Purger",
+    "purgeConfirm": "Supprimer tous les contrôles de la course \"{{name}}\" ({{count}} au total) ? Cette action est irréversible.",
+    "purgePasswordPrompt": "Saisissez le mot de passe super-admin pour confirmer la purge de \"{{name}}\".",
+    "purgeConfirmBtn": "Confirmer la purge",
+    "purgeWrongPw": "Mot de passe incorrect."
   }
 }

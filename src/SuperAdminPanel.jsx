@@ -27,6 +27,10 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
   const [raceError, setRaceError] = useState("");
   const [saveError, setSaveError] = useState("");
 
+  const [purgingRaceId, setPurgingRaceId] = useState(null);
+  const [purgePassword, setPurgePassword] = useState("");
+  const [purgeError, setPurgeError] = useState("");
+
   const [assignedMarshalIds, setAssignedMarshalIds] = useState(null);
   const [assignedGearIds, setAssignedGearIds] = useState(null);
   const [loadingAssignments, setLoadingAssignments] = useState(false);
@@ -104,6 +108,36 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
   const unselectAllGear = async (eventId) => {
     await supabase.from("event_gear").delete().eq("event_id", eventId);
     setAssignedGearIds(new Set());
+  };
+
+  // ── Purge controls ──
+  const startPurge = async (race) => {
+    const { count } = await supabase
+      .from("controles")
+      .select("id", { count: "exact", head: true })
+      .eq("race_id", race.id);
+    if (!window.confirm(t("superAdmin.purgeConfirm", { name: race.name, count: count ?? 0 }))) return;
+    setPurgingRaceId(race.id);
+    setPurgePassword("");
+    setPurgeError("");
+  };
+
+  const confirmPurge = async (race) => {
+    const hash = await sha256Hex(purgePassword);
+    if (hash !== import.meta.env.VITE_SUPERADMIN_PW_HASH) {
+      setPurgeError(t("superAdmin.purgeWrongPw"));
+      return;
+    }
+    await supabase.from("controles").delete().eq("race_id", race.id);
+    setPurgingRaceId(null);
+    setPurgePassword("");
+    setPurgeError("");
+  };
+
+  const cancelPurge = () => {
+    setPurgingRaceId(null);
+    setPurgePassword("");
+    setPurgeError("");
   };
 
   // ── Event CRUD ──
@@ -413,57 +447,93 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
 
                 <div className="space-y-1">
                   {racesFor(ev.id).map(race => (
-                    <div key={race.id} className="flex items-center gap-2 bg-white rounded border p-2 flex-wrap">
-                      {editingRaceId === race.id ? (
-                        <>
-                          <input
-                            className="border rounded p-1 text-sm flex-1 min-w-28"
-                            value={editRaceForm.name}
-                            onChange={e => setEditRaceForm(f => ({ ...f, name: e.target.value }))}
-                            autoFocus
-                          />
-                          <input
-                            className="border rounded p-1 text-sm w-24"
-                            type="number"
-                            placeholder={t("superAdmin.raceMin")}
-                            value={editRaceForm.range_min}
-                            onChange={e => setEditRaceForm(f => ({ ...f, range_min: e.target.value }))}
-                          />
-                          <input
-                            className="border rounded p-1 text-sm w-24"
-                            type="number"
-                            placeholder={t("superAdmin.raceMax")}
-                            value={editRaceForm.range_max}
-                            onChange={e => setEditRaceForm(f => ({ ...f, range_max: e.target.value }))}
-                          />
-                          <button onClick={() => saveRace(race)} className="px-2 py-1 bg-green-600 text-white rounded text-xs">
-                            {t("superAdmin.save")}
-                          </button>
-                          <button onClick={() => setEditingRaceId(null)} className="px-2 py-1 border rounded text-xs">
-                            {t("superAdmin.cancel")}
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <span className="flex-1 text-sm">{race.name}</span>
-                          <span className="text-xs text-gray-400">
-                            {race.range_min != null && race.range_max != null
-                              ? `${race.range_min} – ${race.range_max}`
-                              : "—"}
-                          </span>
-                          <button
-                            onClick={() => startEditRace(race)}
-                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50"
-                          >
-                            {t("superAdmin.edit")}
-                          </button>
-                          <button
-                            onClick={() => deleteRace(race)}
-                            className="px-2 py-1 border rounded text-xs text-red-600 hover:bg-red-50"
-                          >
-                            {t("superAdmin.delete")}
-                          </button>
-                        </>
+                    <div key={race.id}>
+                      <div className="flex items-center gap-2 bg-white rounded border p-2 flex-wrap">
+                        {editingRaceId === race.id ? (
+                          <>
+                            <input
+                              className="border rounded p-1 text-sm flex-1 min-w-28"
+                              value={editRaceForm.name}
+                              onChange={e => setEditRaceForm(f => ({ ...f, name: e.target.value }))}
+                              autoFocus
+                            />
+                            <input
+                              className="border rounded p-1 text-sm w-24"
+                              type="number"
+                              placeholder={t("superAdmin.raceMin")}
+                              value={editRaceForm.range_min}
+                              onChange={e => setEditRaceForm(f => ({ ...f, range_min: e.target.value }))}
+                            />
+                            <input
+                              className="border rounded p-1 text-sm w-24"
+                              type="number"
+                              placeholder={t("superAdmin.raceMax")}
+                              value={editRaceForm.range_max}
+                              onChange={e => setEditRaceForm(f => ({ ...f, range_max: e.target.value }))}
+                            />
+                            <button onClick={() => saveRace(race)} className="px-2 py-1 bg-green-600 text-white rounded text-xs">
+                              {t("superAdmin.save")}
+                            </button>
+                            <button onClick={() => setEditingRaceId(null)} className="px-2 py-1 border rounded text-xs">
+                              {t("superAdmin.cancel")}
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <span className="flex-1 text-sm">{race.name}</span>
+                            <span className="text-xs text-gray-400">
+                              {race.range_min != null && race.range_max != null
+                                ? `${race.range_min} – ${race.range_max}`
+                                : "—"}
+                            </span>
+                            <button
+                              onClick={() => startEditRace(race)}
+                              className="px-2 py-1 border rounded text-xs hover:bg-gray-50"
+                            >
+                              {t("superAdmin.edit")}
+                            </button>
+                            <button
+                              onClick={() => deleteRace(race)}
+                              className="px-2 py-1 border rounded text-xs text-red-600 hover:bg-red-50"
+                            >
+                              {t("superAdmin.delete")}
+                            </button>
+                            <button
+                              onClick={() => startPurge(race)}
+                              className="px-2 py-1 border rounded text-xs text-orange-600 hover:bg-orange-50"
+                            >
+                              {t("superAdmin.purge")}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                      {purgingRaceId === race.id && (
+                        <div className="mt-1 p-3 bg-red-50 border border-red-200 rounded flex flex-col gap-2">
+                          <p className="text-xs text-red-700 font-medium">
+                            {t("superAdmin.purgePasswordPrompt", { name: race.name })}
+                          </p>
+                          <div className="flex gap-2 items-center flex-wrap">
+                            <input
+                              type="password"
+                              className={`border rounded p-1 text-sm flex-1 min-w-32 ${purgeError ? "border-red-500" : ""}`}
+                              placeholder={t("superAdmin.authPlaceholder")}
+                              value={purgePassword}
+                              onChange={e => { setPurgePassword(e.target.value); setPurgeError(""); }}
+                              onKeyDown={e => e.key === "Enter" && confirmPurge(race)}
+                              autoFocus
+                            />
+                            <button
+                              onClick={() => confirmPurge(race)}
+                              className="px-2 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
+                            >
+                              {t("superAdmin.purgeConfirmBtn")}
+                            </button>
+                            <button onClick={cancelPurge} className="px-2 py-1 border rounded text-xs">
+                              {t("superAdmin.cancel")}
+                            </button>
+                          </div>
+                          {purgeError && <p className="text-xs text-red-600">{purgeError}</p>}
+                        </div>
                       )}
                     </div>
                   ))}
