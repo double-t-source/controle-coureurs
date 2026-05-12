@@ -9,7 +9,7 @@ async function sha256Hex(s) {
 
 // ─── Events & Races Tab ────────────────────────────────────────────────────
 
-function EventsRacesTab({ t, events, races, onRefreshEvents, onRefreshRaces }) {
+function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onRefreshRaces }) {
   const [expandedId, setExpandedId] = useState(null);
   const [editingEventId, setEditingEventId] = useState(null);
   const [editEventName, setEditEventName] = useState("");
@@ -27,9 +27,84 @@ function EventsRacesTab({ t, events, races, onRefreshEvents, onRefreshRaces }) {
   const [raceError, setRaceError] = useState("");
   const [saveError, setSaveError] = useState("");
 
+  const [assignedMarshalIds, setAssignedMarshalIds] = useState(null);
+  const [assignedGearIds, setAssignedGearIds] = useState(null);
+  const [loadingAssignments, setLoadingAssignments] = useState(false);
+
   const racesFor = (eventId) => races.filter(r => r.event_id === eventId);
 
   const toggleExpand = (id) => setExpandedId(prev => (prev === id ? null : id));
+
+  useEffect(() => {
+    if (!expandedId) {
+      setAssignedMarshalIds(null);
+      setAssignedGearIds(null);
+      return;
+    }
+    const load = async () => {
+      setLoadingAssignments(true);
+      const [{ data: mData }, { data: gData }] = await Promise.all([
+        supabase.from("marshal_event_assignments").select("marshal_id").eq("event_id", expandedId),
+        supabase.from("event_gear").select("gear_id").eq("event_id", expandedId),
+      ]);
+      setAssignedMarshalIds(new Set((mData || []).map(r => r.marshal_id)));
+      setAssignedGearIds(new Set((gData || []).map(r => r.gear_id)));
+      setLoadingAssignments(false);
+    };
+    load();
+  }, [expandedId]);
+
+  const toggleMarshal = async (eventId, marshalId) => {
+    if (!assignedMarshalIds) return;
+    if (assignedMarshalIds.has(marshalId)) {
+      await supabase.from("marshal_event_assignments").delete()
+        .eq("event_id", eventId).eq("marshal_id", marshalId);
+      setAssignedMarshalIds(prev => { const s = new Set(prev); s.delete(marshalId); return s; });
+    } else {
+      await supabase.from("marshal_event_assignments").insert({ event_id: eventId, marshal_id: marshalId });
+      setAssignedMarshalIds(prev => new Set([...prev, marshalId]));
+    }
+  };
+
+  const toggleGear = async (eventId, gearId) => {
+    if (!assignedGearIds) return;
+    if (assignedGearIds.has(gearId)) {
+      await supabase.from("event_gear").delete()
+        .eq("event_id", eventId).eq("gear_id", gearId);
+      setAssignedGearIds(prev => { const s = new Set(prev); s.delete(gearId); return s; });
+    } else {
+      await supabase.from("event_gear").insert({ event_id: eventId, gear_id: gearId });
+      setAssignedGearIds(prev => new Set([...prev, gearId]));
+    }
+  };
+
+  const selectAllMarshals = async (eventId) => {
+    if (!assignedMarshalIds) return;
+    const toInsert = marshals
+      .filter(m => m.isActive && !assignedMarshalIds.has(m.id))
+      .map(m => ({ event_id: eventId, marshal_id: m.id }));
+    if (toInsert.length > 0) await supabase.from("marshal_event_assignments").insert(toInsert);
+    setAssignedMarshalIds(new Set(marshals.filter(m => m.isActive).map(m => m.id)));
+  };
+
+  const unselectAllMarshals = async (eventId) => {
+    await supabase.from("marshal_event_assignments").delete().eq("event_id", eventId);
+    setAssignedMarshalIds(new Set());
+  };
+
+  const selectAllGear = async (eventId) => {
+    if (!assignedGearIds) return;
+    const toInsert = gear
+      .filter(g => !assignedGearIds.has(g.id))
+      .map(g => ({ event_id: eventId, gear_id: g.id }));
+    if (toInsert.length > 0) await supabase.from("event_gear").insert(toInsert);
+    setAssignedGearIds(new Set(gear.map(g => g.id)));
+  };
+
+  const unselectAllGear = async (eventId) => {
+    await supabase.from("event_gear").delete().eq("event_id", eventId);
+    setAssignedGearIds(new Set());
+  };
 
   // ── Event CRUD ──
   const startAddEvent = () => { setAddingEvent(true); setNewEventName(""); setNewEventDate(""); setNewGeoMode("no"); setSaveError(""); };
@@ -393,6 +468,89 @@ function EventsRacesTab({ t, events, races, onRefreshEvents, onRefreshRaces }) {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* Marshal assignments sub-section */}
+            {expandedId === ev.id && (
+              <div className="border-t bg-gray-50 p-3">
+                <div className="flex justify-between items-center mb-2">
+                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    {t("superAdmin.marshalAssignments")}
+                  </div>
+                  {!loadingAssignments && marshals.filter(m => m.isActive).length > 0 && (
+                    <div className="flex gap-1">
+                      <button onClick={() => selectAllMarshals(ev.id)} className="px-2 py-0.5 text-xs border rounded hover:bg-gray-100">
+                        {t("superAdmin.selectAll")}
+                      </button>
+                      <button onClick={() => unselectAllMarshals(ev.id)} className="px-2 py-0.5 text-xs border rounded hover:bg-gray-100">
+                        {t("superAdmin.unselectAll")}
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {loadingAssignments ? (
+                  <p className="text-xs text-gray-400">…</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-1">
+                    {marshals.filter(m => m.isActive).length === 0 && (
+                      <p className="text-xs text-gray-400 col-span-2">{t("superAdmin.noActiveMarshal")}</p>
+                    )}
+                    {[...marshals]
+                      .filter(m => m.isActive)
+                      .sort((a, b) => (a.lastName || "").localeCompare(b.lastName || ""))
+                      .map(m => (
+                        <label key={m.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={assignedMarshalIds?.has(m.id) ?? false}
+                            onChange={() => toggleMarshal(ev.id, m.id)}
+                          />
+                          {m.lastName} {m.firstName}
+                        </label>
+                      ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Gear assignments sub-section */}
+            {expandedId === ev.id && (
+              <div className="border-t bg-gray-50 p-3">
+                <div className="flex justify-between items-center mb-2">
+                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    {t("superAdmin.gearAssignments")}
+                  </div>
+                  {!loadingAssignments && gear.length > 0 && (
+                    <div className="flex gap-1">
+                      <button onClick={() => selectAllGear(ev.id)} className="px-2 py-0.5 text-xs border rounded hover:bg-gray-100">
+                        {t("superAdmin.selectAll")}
+                      </button>
+                      <button onClick={() => unselectAllGear(ev.id)} className="px-2 py-0.5 text-xs border rounded hover:bg-gray-100">
+                        {t("superAdmin.unselectAll")}
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {loadingAssignments ? (
+                  <p className="text-xs text-gray-400">…</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-1">
+                    {gear.length === 0 && (
+                      <p className="text-xs text-gray-400 col-span-2">{t("superAdmin.noGear")}</p>
+                    )}
+                    {gear.map(g => (
+                      <label key={g.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={assignedGearIds?.has(g.id) ?? false}
+                          onChange={() => toggleGear(ev.id, g.id)}
+                        />
+                        {g.label_fr}
+                      </label>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -815,6 +973,8 @@ export default function SuperAdminPanel() {
               t={t}
               events={events}
               races={races}
+              marshals={marshals}
+              gear={gear}
               onRefreshEvents={fetchEvents}
               onRefreshRaces={fetchRaces}
             />

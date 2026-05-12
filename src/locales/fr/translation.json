@@ -162,6 +162,11 @@
     "geoModeOptional": "Optionnelle",
     "geoModeMandatory": "Obligatoire",
     "saveError": "Erreur lors de l'enregistrement. Veuillez réessayer.",
-    "loadError": "Erreur lors du chargement des données."
+    "loadError": "Erreur lors du chargement des données.",
+    "marshalAssignments": "Commissaires assignés",
+    "gearAssignments": "Équipement obligatoire",
+    "noActiveMarshal": "Aucun commissaire actif.",
+    "selectAll": "Tout sélectionner",
+    "unselectAll": "Tout désélectionner"
   }
 }

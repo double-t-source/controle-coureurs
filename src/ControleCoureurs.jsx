@@ -48,33 +48,11 @@ const ControleCoureurs = () => {
       const { data } = await supabase.from("events").select("id, name, isLocked, geolocation_mode");
       if (data) setEventList(data);
     };
-    const fetchGear = async () => {
-      const { data } = await supabase.from("gear").select("code,label_fr,label_en").order("label_fr");
-      if (data) setGearOptions(data);
-    };
-    const fetchMarshals = async () => {
-      const { data } = await supabase
-        .from("marshals")
-        .select("id, firstName, lastName")
-        .eq("isActive", true)
-        .order("lastName", { ascending: true });
-      if (data) {
-        const mapping = {};
-        const list = data.map((m) => {
-          mapping[m.id] = `${m.firstName} ${m.lastName}`;
-          return { id: m.id, label: `${m.firstName} ${m.lastName}` };
-        });
-        setMarshalList(list);
-        setMarshalNames(mapping);
-      }
-    };
     const fetchLocations = async () => {
       const { data } = await supabase.from("locations").select("id, name").eq("isActive", true);
       if (data) setLocationList(data);
     };
     fetchEvents();
-    fetchGear();
-    fetchMarshals();
     fetchLocations();
   }, []);
 
@@ -101,23 +79,72 @@ const ControleCoureurs = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventInfo.event_id]);
 
-  // Charger les courses (races) après sélection d'évènement (inclut range_min / range_max)
+  // Charger les courses, commissaires et équipements après sélection d'évènement
   useEffect(() => {
-    const fetchRaces = async () => {
+    const fetchEventData = async () => {
       if (!eventInfo.event_id) {
         setRaceList([]);
+        setMarshalList([]);
+        setMarshalNames({});
+        setGearOptions([]);
         return;
       }
-      const { data } = await supabase
+
+      const { data: raceData } = await supabase
         .from("races")
         .select("id, name, range_min, range_max")
         .eq("event_id", eventInfo.event_id)
         .order("name", { ascending: true });
-      if (data) setRaceList(data);
+      if (raceData) setRaceList(raceData);
+
+      const { data: assignments } = await supabase
+        .from("marshal_event_assignments")
+        .select("marshal_id")
+        .eq("event_id", eventInfo.event_id);
+      const marshalIds = (assignments || []).map((a) => a.marshal_id);
+      if (marshalIds.length > 0) {
+        const { data: marshalsData } = await supabase
+          .from("marshals")
+          .select("id, firstName, lastName")
+          .eq("isActive", true)
+          .in("id", marshalIds)
+          .order("lastName", { ascending: true });
+        if (marshalsData) {
+          const mapping = {};
+          const list = marshalsData.map((m) => {
+            mapping[m.id] = `${m.firstName} ${m.lastName}`;
+            return { id: m.id, label: `${m.firstName} ${m.lastName}` };
+          });
+          setMarshalList(list);
+          setMarshalNames(mapping);
+        }
+      } else {
+        setMarshalList([]);
+        setMarshalNames({});
+      }
+
+      const { data: eventGearRows } = await supabase
+        .from("event_gear")
+        .select("gear_id")
+        .eq("event_id", eventInfo.event_id);
+      const gearIds = (eventGearRows || []).map((r) => r.gear_id);
+      if (gearIds.length > 0) {
+        const { data: gearData } = await supabase
+          .from("gear")
+          .select("code, label_fr, label_en")
+          .in("id", gearIds)
+          .order("label_fr", { ascending: true });
+        if (gearData) setGearOptions(gearData);
+      } else {
+        setGearOptions([]);
+      }
     };
-    // reset de la course si on change d'évènement
+
     setEventInfo((prev) => ({ ...prev, race_id: "" }));
-    fetchRaces();
+    setRaceList([]);
+    setMarshalList([]);
+    setGearOptions([]);
+    fetchEventData();
   }, [eventInfo.event_id]);
 
   // Polling des contrôles pour la course sélectionnée
@@ -392,7 +419,7 @@ const ControleCoureurs = () => {
           <button
             className="w-full bg-blue-600 text-white py-3 rounded disabled:opacity-50"
             onClick={() => setStep(2)}
-            disabled={!eventInfo.marshal_id || !eventInfo.race_id || geoBlocked}
+            disabled={!selectedMarshal || !eventInfo.race_id || geoBlocked}
           >
             {t("start")}
           </button>

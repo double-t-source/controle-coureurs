@@ -162,6 +162,11 @@
     "geoModeOptional": "Optional",
     "geoModeMandatory": "Mandatory",
     "saveError": "Save error. Please try again.",
-    "loadError": "Error loading data."
+    "loadError": "Error loading data.",
+    "marshalAssignments": "Assigned marshals",
+    "gearAssignments": "Mandatory gear",
+    "noActiveMarshal": "No active marshals.",
+    "selectAll": "Select all",
+    "unselectAll": "Unselect all"
   }
 }
