@@ -1,3 +1,4 @@
+// @ts-nocheck — Deno runtime, not Node.js
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const CORS = {
@@ -162,7 +163,7 @@ Deno.serve(async (req) => {
     },
     body: JSON.stringify({
       from: 'Control Report <onboarding@resend.dev>',
-      to: [Deno.env.get('REPORT_TO_EMAIL')!],
+      to: Deno.env.get('REPORT_TO_EMAIL')!.split(',').map(e => e.trim()),
       subject: `Control Report — ${dateStr}`,
       html,
     }),
