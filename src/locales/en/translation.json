@@ -175,6 +175,7 @@
     "purgePasswordPrompt": "Enter the super-admin password to confirm purging \"{{name}}\".",
     "purgeConfirmBtn": "Confirm purge",
     "purgeWrongPw": "Incorrect password.",
+    "purgeSuccessMsg": "✅ All controls for \"{{name}}\" have been deleted.",
     "racePacers": "Pacers"
   }
 }

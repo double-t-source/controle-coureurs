@@ -175,6 +175,7 @@
     "purgePasswordPrompt": "Saisissez le mot de passe super-admin pour confirmer la purge de \"{{name}}\".",
     "purgeConfirmBtn": "Confirmer la purge",
     "purgeWrongPw": "Mot de passe incorrect.",
+    "purgeSuccessMsg": "✅ Tous les contrôles de \"{{name}}\" ont été supprimés.",
     "racePacers": "Pacers"
   }
 }

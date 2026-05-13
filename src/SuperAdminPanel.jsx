@@ -30,6 +30,7 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
   const [purgingRaceId, setPurgingRaceId] = useState(null);
   const [purgePassword, setPurgePassword] = useState("");
   const [purgeError, setPurgeError] = useState("");
+  const [purgeSuccess, setPurgeSuccess] = useState(null);
 
   const [assignedMarshalIds, setAssignedMarshalIds] = useState(null);
   const [assignedGearIds, setAssignedGearIds] = useState(null);
@@ -128,10 +129,17 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
       setPurgeError(t("superAdmin.purgeWrongPw"));
       return;
     }
-    await supabase.from("controles").delete().eq("race_id", race.id);
+    const { error } = await supabase.from("controles").delete().eq("race_id", race.id);
+    if (error) {
+      setPurgeError(t("superAdmin.saveError"));
+      return;
+    }
     setPurgingRaceId(null);
     setPurgePassword("");
     setPurgeError("");
+    setPurgeSuccess(race.name);
+    onRefreshRaces();
+    setTimeout(() => setPurgeSuccess(null), 4000);
   };
 
   const cancelPurge = () => {
@@ -557,6 +565,11 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
                           </div>
                           {purgeError && <p className="text-xs text-red-600">{purgeError}</p>}
                         </div>
+                      )}
+                      {purgeSuccess === race.name && (
+                        <p className="mt-1 text-xs text-green-700 font-medium">
+                          {t("superAdmin.purgeSuccessMsg", { name: race.name })}
+                        </p>
                       )}
                     </div>
                   ))}
