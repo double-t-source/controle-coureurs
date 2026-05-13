@@ -187,7 +187,9 @@
     "reportEmailPlaceholder": "Recipient email address",
     "reportEnabled": "Report active",
     "reportDisabled": "Report off",
-    "reportSaved": "✅ Settings saved",
+    "reportEnableTooltip": "Click to enable report",
+    "reportDisable": "Click to disable report",
+    "reportSaved": "✅ Report will be sent to {{email}}",
     "sendEventReport": "Send report now"
   }
 }

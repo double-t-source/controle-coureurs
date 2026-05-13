@@ -35,6 +35,7 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
   const [reportEmail, setReportEmail] = useState("");
   const [reportEnabled, setReportEnabled] = useState(false);
   const [reportSaveStatus, setReportSaveStatus] = useState(null); // null | 'saving' | 'saved' | 'error'
+  const [savedReportEmail, setSavedReportEmail] = useState("");
   const [eventReportStatuses, setEventReportStatuses] = useState({}); // {[id]: null | 'sending' | 'success' | 'no-controls' | 'error'}
 
   const [assignedMarshalIds, setAssignedMarshalIds] = useState(null);
@@ -135,9 +136,19 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
       .update({ report_email: email, report_enabled: reportEnabled && !!email })
       .eq("id", eventId);
     if (error) { setReportSaveStatus('error'); return; }
+    setSavedReportEmail(email || "");
     setReportSaveStatus('saved');
     onRefreshEvents();
-    setTimeout(() => setReportSaveStatus(null), 3000);
+    setTimeout(() => setReportSaveStatus(null), 4000);
+  };
+
+  const toggleEventReport = async (ev, e) => {
+    e.stopPropagation();
+    if (!ev.report_email) return;
+    const newEnabled = !ev.report_enabled;
+    await supabase.from("events").update({ report_enabled: newEnabled }).eq("id", ev.id);
+    if (expandedId === ev.id) setReportEnabled(newEnabled);
+    onRefreshEvents();
   };
 
   const sendEventReport = async (eventId) => {
@@ -427,9 +438,13 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
                   )}
                   {ev.report_email && (
                     <>
-                      <span className={`text-xs px-2 py-0.5 rounded flex-shrink-0 ${ev.report_enabled ? "bg-indigo-100 text-indigo-700" : "bg-gray-100 text-gray-500"}`}>
+                      <button
+                        onClick={(e) => toggleEventReport(ev, e)}
+                        title={ev.report_enabled ? t("superAdmin.reportDisable") : t("superAdmin.reportEnableTooltip")}
+                        className={`text-xs px-2 py-0.5 rounded flex-shrink-0 transition-opacity hover:opacity-70 ${ev.report_enabled ? "bg-indigo-100 text-indigo-700" : "bg-gray-100 text-gray-500"}`}
+                      >
                         📧 {ev.report_enabled ? t("superAdmin.reportEnabled") : t("superAdmin.reportDisabled")}
-                      </span>
+                      </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); sendEventReport(ev.id); }}
                         disabled={eventReportStatuses[ev.id] === 'sending'}
@@ -750,7 +765,7 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
                     {reportSaveStatus === 'saving' ? '…' : t("superAdmin.save")}
                   </button>
                 </div>
-                {reportSaveStatus === 'saved' && <p className="text-xs text-green-700 mt-1">{t("superAdmin.reportSaved")}</p>}
+                {reportSaveStatus === 'saved' && <p className="text-xs text-green-700 mt-1">{t("superAdmin.reportSaved", { email: savedReportEmail })}</p>}
                 {reportSaveStatus === 'error' && <p className="text-xs text-red-600 mt-1">{t("superAdmin.saveError")}</p>}
                 {eventReportStatuses[ev.id] === 'success' && <p className="text-xs text-green-700 mt-1">{t("superAdmin.sendReportSuccess")}</p>}
                 {eventReportStatuses[ev.id] === 'no-controls' && <p className="text-xs text-gray-500 mt-1">{t("superAdmin.sendReportNoControls")}</p>}

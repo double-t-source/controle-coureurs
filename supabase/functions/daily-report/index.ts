@@ -85,11 +85,13 @@ function wrapEmail(title, subtitle, bodyHtml) {
 </body></html>`
 }
 
-async function sendEmail(apiKey, to, subject, html) {
+async function sendEmail(apiKey, to, subject, html, bcc = []) {
+  const payload = { from: FROM, to: Array.isArray(to) ? to : [to], subject, html }
+  if (bcc.length) payload.bcc = bcc
   const res = await fetch(RESEND_URL, {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: FROM, to: Array.isArray(to) ? to : [to], subject, html }),
+    body: JSON.stringify(payload),
   })
   if (!res.ok) console.error('Resend error:', await res.text())
   return res.ok
@@ -165,7 +167,7 @@ Deno.serve(async (req) => {
     }
 
     const html = wrapEmail(`${esc(event.name)} — Control Report — ${dateStr}`, subtitle(controls?.length), bodyHtml)
-    const ok = await sendEmail(RESEND_KEY, event.report_email, `[${event.name}] Control Report — ${dateStr}`, html)
+    const ok = await sendEmail(RESEND_KEY, event.report_email, `[${event.name}] Control Report — ${dateStr}`, html, REPORT_TO)
     return new Response(
       JSON.stringify({ message: ok ? 'Report sent.' : 'No controls in the last 24 hours for this event.' }),
       { status: ok ? 200 : 500, headers: CORS },
@@ -238,7 +240,7 @@ Deno.serve(async (req) => {
       for (const race of Object.values(raceMap)) bodyHtml += buildRaceSection(race.name, race.controls, gearMap)
 
       const html = wrapEmail(`${esc(event.name)} — Control Report — ${dateStr}`, subtitle(evControls.length), bodyHtml)
-      await sendEmail(RESEND_KEY, event.report_email, `[${event.name}] Control Report — ${dateStr}`, html)
+      await sendEmail(RESEND_KEY, event.report_email, `[${event.name}] Control Report — ${dateStr}`, html, REPORT_TO)
     }
   }
 

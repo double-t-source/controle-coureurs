@@ -187,7 +187,9 @@
     "reportEmailPlaceholder": "Adresse e-mail du destinataire",
     "reportEnabled": "Rapport actif",
     "reportDisabled": "Rapport inactif",
-    "reportSaved": "✅ Paramètres enregistrés",
+    "reportEnableTooltip": "Cliquer pour activer le rapport",
+    "reportDisable": "Cliquer pour désactiver le rapport",
+    "reportSaved": "✅ Le rapport sera envoyé à {{email}}",
     "sendEventReport": "Envoyer le rapport maintenant"
   }
 }
