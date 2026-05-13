@@ -32,6 +32,11 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
   const [purgeError, setPurgeError] = useState("");
   const [purgeSuccess, setPurgeSuccess] = useState(null);
 
+  const [reportEmail, setReportEmail] = useState("");
+  const [reportEnabled, setReportEnabled] = useState(false);
+  const [reportSaveStatus, setReportSaveStatus] = useState(null); // null | 'saving' | 'saved' | 'error'
+  const [eventReportStatuses, setEventReportStatuses] = useState({}); // {[id]: null | 'sending' | 'success' | 'no-controls' | 'error'}
+
   const [assignedMarshalIds, setAssignedMarshalIds] = useState(null);
   const [assignedGearIds, setAssignedGearIds] = useState(null);
   const [loadingAssignments, setLoadingAssignments] = useState(false);
@@ -39,6 +44,16 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
   const racesFor = (eventId) => races.filter(r => r.event_id === eventId);
 
   const toggleExpand = (id) => setExpandedId(prev => (prev === id ? null : id));
+
+  useEffect(() => {
+    if (!expandedId) return;
+    const ev = events.find(e => e.id === expandedId);
+    if (ev) {
+      setReportEmail(ev.report_email || "");
+      setReportEnabled(ev.report_enabled ?? false);
+      setReportSaveStatus(null);
+    }
+  }, [expandedId, events]);
 
   useEffect(() => {
     if (!expandedId) {
@@ -109,6 +124,36 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
   const unselectAllGear = async (eventId) => {
     await supabase.from("event_gear").delete().eq("event_id", eventId);
     setAssignedGearIds(new Set());
+  };
+
+  // ── Event report settings ──
+  const saveEventReport = async (eventId) => {
+    setReportSaveStatus('saving');
+    const email = reportEmail.trim() || null;
+    const { error } = await supabase
+      .from("events")
+      .update({ report_email: email, report_enabled: reportEnabled && !!email })
+      .eq("id", eventId);
+    if (error) { setReportSaveStatus('error'); return; }
+    setReportSaveStatus('saved');
+    onRefreshEvents();
+    setTimeout(() => setReportSaveStatus(null), 3000);
+  };
+
+  const sendEventReport = async (eventId) => {
+    setEventReportStatuses(prev => ({ ...prev, [eventId]: 'sending' }));
+    try {
+      const { data, error } = await supabase.functions.invoke('daily-report', { body: { force_event_id: eventId } });
+      if (error) {
+        setEventReportStatuses(prev => ({ ...prev, [eventId]: 'error' }));
+      } else {
+        const status = data?.message?.includes('No controls') ? 'no-controls' : 'success';
+        setEventReportStatuses(prev => ({ ...prev, [eventId]: status }));
+      }
+    } catch {
+      setEventReportStatuses(prev => ({ ...prev, [eventId]: 'error' }));
+    }
+    setTimeout(() => setEventReportStatuses(prev => ({ ...prev, [eventId]: null })), 5000);
   };
 
   // ── Purge controls ──
@@ -379,6 +424,21 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
                     <span className={`text-xs px-2 py-0.5 rounded flex-shrink-0 ${ev.geolocation_mode === "mandatory" ? "bg-orange-100 text-orange-700" : "bg-blue-100 text-blue-700"}`}>
                       📍 {t(`superAdmin.geoMode${ev.geolocation_mode.charAt(0).toUpperCase() + ev.geolocation_mode.slice(1)}`)}
                     </span>
+                  )}
+                  {ev.report_email && (
+                    <>
+                      <span className={`text-xs px-2 py-0.5 rounded flex-shrink-0 ${ev.report_enabled ? "bg-indigo-100 text-indigo-700" : "bg-gray-100 text-gray-500"}`}>
+                        📧 {ev.report_enabled ? t("superAdmin.reportEnabled") : t("superAdmin.reportDisabled")}
+                      </span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); sendEventReport(ev.id); }}
+                        disabled={eventReportStatuses[ev.id] === 'sending'}
+                        title={t("superAdmin.sendEventReport")}
+                        className="px-2 py-1 border rounded text-xs text-indigo-600 hover:bg-indigo-50 flex-shrink-0 disabled:opacity-50"
+                      >
+                        {eventReportStatuses[ev.id] === 'sending' ? '…' : eventReportStatuses[ev.id] === 'success' ? '✅' : eventReportStatuses[ev.id] === 'error' ? '❌' : '📧'}
+                      </button>
+                    </>
                   )}
                   <button
                     onClick={() => toggleLock(ev.id, ev.isLocked)}
@@ -657,6 +717,44 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Daily report sub-section */}
+            {expandedId === ev.id && (
+              <div className="border-t bg-gray-50 p-3">
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  {t("superAdmin.eventReport")}
+                </div>
+                <div className="flex gap-2 items-center flex-wrap">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer flex-shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={reportEnabled}
+                      onChange={e => setReportEnabled(e.target.checked)}
+                    />
+                    {t("superAdmin.reportEnable")}
+                  </label>
+                  <input
+                    type="email"
+                    className="border rounded p-1 text-sm flex-1 min-w-48"
+                    placeholder={t("superAdmin.reportEmailPlaceholder")}
+                    value={reportEmail}
+                    onChange={e => setReportEmail(e.target.value)}
+                  />
+                  <button
+                    onClick={() => saveEventReport(ev.id)}
+                    disabled={reportSaveStatus === 'saving'}
+                    className="px-2 py-1 bg-green-600 text-white rounded text-xs disabled:opacity-50"
+                  >
+                    {reportSaveStatus === 'saving' ? '…' : t("superAdmin.save")}
+                  </button>
+                </div>
+                {reportSaveStatus === 'saved' && <p className="text-xs text-green-700 mt-1">{t("superAdmin.reportSaved")}</p>}
+                {reportSaveStatus === 'error' && <p className="text-xs text-red-600 mt-1">{t("superAdmin.saveError")}</p>}
+                {eventReportStatuses[ev.id] === 'success' && <p className="text-xs text-green-700 mt-1">{t("superAdmin.sendReportSuccess")}</p>}
+                {eventReportStatuses[ev.id] === 'no-controls' && <p className="text-xs text-gray-500 mt-1">{t("superAdmin.sendReportNoControls")}</p>}
+                {eventReportStatuses[ev.id] === 'error' && <p className="text-xs text-red-600 mt-1">{t("superAdmin.sendReportError")}</p>}
               </div>
             )}
           </div>
@@ -1021,7 +1119,7 @@ export default function SuperAdminPanel() {
   };
 
   const fetchEvents = async () => {
-    const { data, error } = await supabase.from("events").select("id, name, date, isLocked, geolocation_mode").order("name");
+    const { data, error } = await supabase.from("events").select("id, name, date, isLocked, geolocation_mode, report_email, report_enabled").order("name");
     if (error) { setLoadError(t("superAdmin.loadError")); return; }
     setEvents(data || []);
   };

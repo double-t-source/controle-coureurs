@@ -181,6 +181,13 @@
     "sendReportSending": "Sending...",
     "sendReportSuccess": "✅ Report sent to your inbox.",
     "sendReportNoControls": "No controls in the last 24 hours — no email sent.",
-    "sendReportError": "❌ Failed to send the report. Check the Edge Function logs."
+    "sendReportError": "❌ Failed to send the report. Check the Edge Function logs.",
+    "eventReport": "Daily Report",
+    "reportEnable": "Enable",
+    "reportEmailPlaceholder": "Recipient email address",
+    "reportEnabled": "Report active",
+    "reportDisabled": "Report off",
+    "reportSaved": "✅ Settings saved",
+    "sendEventReport": "Send report now"
   }
 }

@@ -181,6 +181,13 @@
     "sendReportSending": "Envoi en cours...",
     "sendReportSuccess": "✅ Rapport envoyé dans votre boîte mail.",
     "sendReportNoControls": "Aucun contrôle dans les dernières 24h — aucun email envoyé.",
-    "sendReportError": "❌ Échec de l'envoi. Vérifiez les logs de la fonction."
+    "sendReportError": "❌ Échec de l'envoi. Vérifiez les logs de la fonction.",
+    "eventReport": "Rapport journalier",
+    "reportEnable": "Activer",
+    "reportEmailPlaceholder": "Adresse e-mail du destinataire",
+    "reportEnabled": "Rapport actif",
+    "reportDisabled": "Rapport inactif",
+    "reportSaved": "✅ Paramètres enregistrés",
+    "sendEventReport": "Envoyer le rapport maintenant"
   }
 }
