@@ -983,6 +983,20 @@ export default function SuperAdminPanel() {
   const [marshals, setMarshals] = useState([]);
   const [loadError, setLoadError] = useState("");
 
+  const [reportStatus, setReportStatus] = useState(null); // null | 'sending' | 'success' | 'no-controls' | 'error'
+
+  const sendReport = async () => {
+    setReportStatus('sending');
+    try {
+      const { data, error } = await supabase.functions.invoke('daily-report', { body: { force: true } });
+      if (error) { setReportStatus('error'); return; }
+      setReportStatus(data?.message?.includes('No controls') ? 'no-controls' : 'success');
+    } catch {
+      setReportStatus('error');
+    }
+    setTimeout(() => setReportStatus(null), 5000);
+  };
+
   const tryLogin = async (e) => {
     e.preventDefault();
     if (!HASH) { alert(t("superAdmin.authHashMissingAlert")); return; }
@@ -1047,15 +1061,27 @@ export default function SuperAdminPanel() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">{t("superAdmin.title")}</h1>
         {ok && (
-          <button onClick={logout} className="text-sm px-3 py-1 border rounded hover:bg-gray-50">
-            {t("superAdmin.logout")}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={sendReport}
+              disabled={reportStatus === 'sending'}
+              className="text-sm px-3 py-1 border rounded hover:bg-blue-50 text-blue-600 border-blue-200 disabled:opacity-50"
+            >
+              {reportStatus === 'sending' ? t("superAdmin.sendReportSending") : t("superAdmin.sendReport")}
+            </button>
+            <button onClick={logout} className="text-sm px-3 py-1 border rounded hover:bg-gray-50">
+              {t("superAdmin.logout")}
+            </button>
+          </div>
         )}
       </div>
 
       {ok && (
         <>
           {loadError && <p className="text-sm text-red-600 mb-4">{loadError}</p>}
+          {reportStatus === 'success' && <p className="text-sm text-green-700 mb-4">{t("superAdmin.sendReportSuccess")}</p>}
+          {reportStatus === 'no-controls' && <p className="text-sm text-gray-500 mb-4">{t("superAdmin.sendReportNoControls")}</p>}
+          {reportStatus === 'error' && <p className="text-sm text-red-600 mb-4">{t("superAdmin.sendReportError")}</p>}
 
           {/* Tab bar */}
           <div className="flex gap-1 mb-6 border-b">

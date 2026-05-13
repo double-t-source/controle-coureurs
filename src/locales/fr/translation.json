@@ -176,6 +176,11 @@
     "purgeConfirmBtn": "Confirmer la purge",
     "purgeWrongPw": "Mot de passe incorrect.",
     "purgeSuccessMsg": "✅ Tous les contrôles de \"{{name}}\" ont été supprimés.",
-    "racePacers": "Pacers"
+    "racePacers": "Pacers",
+    "sendReport": "📧 Envoyer le rapport maintenant",
+    "sendReportSending": "Envoi en cours...",
+    "sendReportSuccess": "✅ Rapport envoyé dans votre boîte mail.",
+    "sendReportNoControls": "Aucun contrôle dans les dernières 24h — aucun email envoyé.",
+    "sendReportError": "❌ Échec de l'envoi. Vérifiez les logs de la fonction."
   }
 }

@@ -176,6 +176,11 @@
     "purgeConfirmBtn": "Confirm purge",
     "purgeWrongPw": "Incorrect password.",
     "purgeSuccessMsg": "✅ All controls for \"{{name}}\" have been deleted.",
-    "racePacers": "Pacers"
+    "racePacers": "Pacers",
+    "sendReport": "📧 Send report now",
+    "sendReportSending": "Sending...",
+    "sendReportSuccess": "✅ Report sent to your inbox.",
+    "sendReportNoControls": "No controls in the last 24 hours — no email sent.",
+    "sendReportError": "❌ Failed to send the report. Check the Edge Function logs."
   }
 }
