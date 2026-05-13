@@ -129,7 +129,7 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
       setPurgeError(t("superAdmin.purgeWrongPw"));
       return;
     }
-    const { error } = await supabase.from("controles").delete().eq("race_id", race.id);
+    const { error } = await supabase.rpc("purge_race_controls", { p_race_id: race.id });
     if (error) {
       setPurgeError(t("superAdmin.saveError"));
       return;
