@@ -24,6 +24,7 @@
   "allowedRange": "Plage autorisée : {{min}} – {{max}}",
   "bibOutOfRange": "Dossard hors plage pour cette course.",
   "koRequiredMsg": "Pour un KO, veuillez sélectionner un matériel manquant ou saisir un commentaire.",
+  "pacer": "Pacer",
   "geo": {
     "modeNo": "Désactivée",
     "modeOptional": "Optionnelle (contournable)",
@@ -101,7 +102,8 @@
     "internalCommentPlaceholder": "Ajouter une note...",
     "internalCommentEmpty": "Ajouter...",
     "editInternalComment": "Cliquer pour modifier la note interne",
-    "save": "Enregistrer"
+    "save": "Enregistrer",
+    "pacerBadge": "Pacer"
   },
   "superAdmin": {
     "title": "Super Administration",
@@ -172,6 +174,7 @@
     "purgeConfirm": "Supprimer tous les contrôles de la course \"{{name}}\" ({{count}} au total) ? Cette action est irréversible.",
     "purgePasswordPrompt": "Saisissez le mot de passe super-admin pour confirmer la purge de \"{{name}}\".",
     "purgeConfirmBtn": "Confirmer la purge",
-    "purgeWrongPw": "Mot de passe incorrect."
+    "purgeWrongPw": "Mot de passe incorrect.",
+    "racePacers": "Pacers"
   }
 }

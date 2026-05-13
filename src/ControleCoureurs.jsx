@@ -27,6 +27,7 @@ const ControleCoureurs = () => {
   });
   const [materielCode, setMaterielCode] = useState(""); // code sélectionné dans la liste (ou "__autre__")
 
+  const [isPacer, setIsPacer] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [syncStatus, setSyncStatus] = useState("idle");
   const [dossardsControles, setDossardsControles] = useState([]);
@@ -92,7 +93,7 @@ const ControleCoureurs = () => {
 
       const { data: raceData } = await supabase
         .from("races")
-        .select("id, name, range_min, range_max")
+        .select("id, name, range_min, range_max, has_pacers")
         .eq("event_id", eventInfo.event_id)
         .order("name", { ascending: true });
       if (raceData) setRaceList(raceData);
@@ -144,6 +145,7 @@ const ControleCoureurs = () => {
     setRaceList([]);
     setMarshalList([]);
     setGearOptions([]);
+    setIsPacer(false);
     fetchEventData();
   }, [eventInfo.event_id]);
 
@@ -168,6 +170,14 @@ const ControleCoureurs = () => {
   }, [eventInfo.race_id]);
 
   useEffect(() => {
+    if (!form.dossard) return;
+    const effective = isPacer ? "P" + form.dossard : form.dossard;
+    const found = dossardsControles.find((c) => c.dossard === effective);
+    setDuplicateInfo(found || null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPacer]);
+
+  useEffect(() => {
     if (step === 2 && dossardRef.current) dossardRef.current.focus();
   }, [step, submitted]);
 
@@ -189,7 +199,8 @@ const ControleCoureurs = () => {
     setForm((prev) => ({ ...prev, [name]: value }));
 
     if (name === "dossard") {
-      const found = dossardsControles.find((c) => c.dossard === value);
+      const effective = isPacer ? "P" + value : value;
+      const found = value ? dossardsControles.find((c) => c.dossard === effective) : null;
       setDuplicateInfo(found || null);
     }
     if ((name === "commentaire" && value.trim()) || (name === "materielManquant" && value.trim())) {
@@ -210,6 +221,8 @@ const ControleCoureurs = () => {
 
   const geoMode = selectedEvent?.geolocation_mode || "no";
   const geoBlocked = geoMode === "mandatory" && (geoStatus === "denied" || geoStatus === "unavailable");
+  const raceHasPacers = selectedRace?.has_pacers ?? false;
+  const effectiveDossard = isPacer && form.dossard ? "P" + form.dossard : form.dossard;
 
   // Plage autorisée pour la course sélectionnée
   const allowedMin = selectedRace?.range_min ?? null;
@@ -251,7 +264,7 @@ const ControleCoureurs = () => {
       alert(t("bibDigits"));
       return;
     }
-    // Vérif de la plage
+    // Vérif de la plage (sur la partie numérique uniquement)
     if (allowedMin != null && allowedMax != null) {
       const n = parseInt(form.dossard, 10);
       if (Number.isNaN(n) || n < allowedMin || n > allowedMax) {
@@ -265,7 +278,7 @@ const ControleCoureurs = () => {
       return;
     }
 
-    const isDuplicate = dossardsControles.map((dc) => dc.dossard).includes(form.dossard);
+    const isDuplicate = dossardsControles.map((dc) => dc.dossard).includes(effectiveDossard);
     if (isDuplicate && !window.confirm(t("dupConfirm"))) return;
 
     // Capture geolocation if needed
@@ -288,7 +301,7 @@ const ControleCoureurs = () => {
       race_id: eventInfo.race_id,
       location_id: selectedLocation || null,
       marshal_id: eventInfo.marshal_id,
-      dossard: form.dossard,
+      dossard: effectiveDossard,
       resultat: form.resultat,
       materiel_manquant: form.resultat === "ko" ? form.materielManquant : null,
       commentaire: form.commentaire,
@@ -306,7 +319,7 @@ const ControleCoureurs = () => {
 
     setDossardsControles((prev) => [
       ...prev,
-      { dossard: form.dossard, marshal_id: eventInfo.marshal_id, created_at: new Date().toISOString() },
+      { dossard: effectiveDossard, marshal_id: eventInfo.marshal_id, created_at: new Date().toISOString() },
     ]);
     setSubmitted(true);
     setSyncStatus("success");
@@ -314,6 +327,7 @@ const ControleCoureurs = () => {
     setForm({ dossard: "", resultat: "ok", materielManquant: "", commentaire: "" });
     setMaterielCode("");
     setKoError(false);
+    setIsPacer(false);
     setTimeout(() => setSubmitted(false), 500);
   };
 
@@ -440,24 +454,41 @@ const ControleCoureurs = () => {
 
           <form onSubmit={handleSubmit} className="space-y-3">
             <div className="flex items-center gap-2">
-              <input
-                ref={dossardRef}
-                type="tel"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                name="dossard"
-                placeholder={t("bib")}
-                value={form.dossard}
-                onChange={handleFormChange}
-                required
-                disabled={selectedEvent?.isLocked}
-                className={`w-full p-3 text-lg border rounded-md ${
-                  duplicateInfo || isBibOutOfRange ? "border-red-500" : ""
-                }`}
-              />
+              <div className="relative flex-1">
+                {isPacer && (
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-lg text-purple-700 pointer-events-none select-none">P</span>
+                )}
+                <input
+                  ref={dossardRef}
+                  type="tel"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  name="dossard"
+                  placeholder={t("bib")}
+                  value={form.dossard}
+                  onChange={handleFormChange}
+                  required
+                  disabled={selectedEvent?.isLocked}
+                  className={`w-full p-3 text-lg border rounded-md ${isPacer ? "pl-8 border-purple-400" : ""} ${
+                    duplicateInfo || isBibOutOfRange ? "border-red-500" : ""
+                  }`}
+                />
+              </div>
               <button type="button" onClick={handleClear} className="text-sm px-3 py-2 bg-gray-200 rounded">
                 {t("clear")}
               </button>
+              {raceHasPacers && (
+                <button
+                  type="button"
+                  onClick={() => setIsPacer((p) => !p)}
+                  disabled={selectedEvent?.isLocked}
+                  className={`text-sm px-3 py-2 rounded flex-shrink-0 font-medium transition-colors ${
+                    isPacer ? "bg-purple-600 text-white" : "bg-gray-200 text-gray-600"
+                  }`}
+                >
+                  {t("pacer")}
+                </button>
+              )}
             </div>
 
             {/* Affichage plage autorisée & messages */}
@@ -557,10 +588,14 @@ const ControleCoureurs = () => {
                   .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
                   .slice(0, 10)
                   .map((c, idx) => (
-                    <li key={idx}>
+                    <li key={idx} className="flex items-center gap-1">
+                      {c.dossard.startsWith("P") && (
+                        <span className="text-xs bg-purple-100 text-purple-700 rounded px-1 py-0.5 font-medium flex-shrink-0">
+                          {t("pacer")}
+                        </span>
+                      )}
                       <span className="font-mono">{c.dossard}</span>
                       <span className="text-xs text-gray-500">
-                        {" "}
                         — {marshalNames[c.marshal_id] || "?"}{" "}
                         {t("alreadyAt", {
                           time: new Date(c.created_at).toLocaleTimeString(i18n.language, {

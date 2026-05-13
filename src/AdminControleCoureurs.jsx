@@ -322,18 +322,17 @@ export default function AdminControleCoureurs() {
       });
     }
 
-    // Tri par "dernier contrôle" décroissant dans chaque catégorie
-    const stillKO = summaries
-      .filter((s) => s.lastResult === "ko")
-      .sort((a, b) => new Date(b.lastAt) - new Date(a.lastAt));
+    // Tri par numéro de dossard (ordre numérique), pacer après son coureur
+    const bibSort = (a, b) => {
+      const na = parseInt(a.dossard.replace(/^P/, ""), 10) || 0;
+      const nb = parseInt(b.dossard.replace(/^P/, ""), 10) || 0;
+      if (na !== nb) return na - nb;
+      return a.dossard.startsWith("P") ? 1 : -1;
+    };
 
-    const koThenOk = summaries
-      .filter((s) => s.wentKoThenOk)
-      .sort((a, b) => new Date(b.lastAt) - new Date(a.lastAt));
-
-    const okDirect = summaries
-      .filter((s) => s.lastResult === "ok" && !s.hasKO)
-      .sort((a, b) => new Date(b.lastAt) - new Date(a.lastAt));
+    const stillKO = summaries.filter((s) => s.lastResult === "ko").sort(bibSort);
+    const koThenOk = summaries.filter((s) => s.wentKoThenOk).sort(bibSort);
+    const okDirect = summaries.filter((s) => s.lastResult === "ok" && !s.hasKO).sort(bibSort);
 
     return { stillKO, koThenOk, okDirect };
   })();
@@ -410,16 +409,12 @@ export default function AdminControleCoureurs() {
   };
 
   const bibFilter = searchBib.trim();
+  const matchesBibFilter = (dossard) =>
+    !bibFilter || dossard.includes(bibFilter) || dossard.replace(/^P/, "").includes(bibFilter);
   const filteredGroups = {
-    stillKO: bibFilter
-      ? bibGroups.stillKO.filter((s) => s.dossard.toString().includes(bibFilter))
-      : bibGroups.stillKO,
-    koThenOk: bibFilter
-      ? bibGroups.koThenOk.filter((s) => s.dossard.toString().includes(bibFilter))
-      : bibGroups.koThenOk,
-    okDirect: bibFilter
-      ? bibGroups.okDirect.filter((s) => s.dossard.toString().includes(bibFilter))
-      : bibGroups.okDirect,
+    stillKO: bibGroups.stillKO.filter((s) => matchesBibFilter(s.dossard)),
+    koThenOk: bibGroups.koThenOk.filter((s) => matchesBibFilter(s.dossard)),
+    okDirect: bibGroups.okDirect.filter((s) => matchesBibFilter(s.dossard)),
   };
 
   // Icône de commentaire commissaire avec tooltip au survol
@@ -585,11 +580,14 @@ export default function AdminControleCoureurs() {
               {filteredGroups.stillKO.map((s) => (
                 <tr
                   key={s.dossard}
-                  className={`border-t cursor-pointer ${selectedControleId === s.last?.id ? "bg-orange-50" : "hover:bg-gray-50"}`}
+                  className={`border-t cursor-pointer ${selectedControleId === s.last?.id ? "bg-orange-50" : s.dossard.startsWith("P") ? "bg-purple-50/60 hover:bg-purple-50" : "hover:bg-gray-50"}`}
                   onClick={() => s.last && handleRowClick(s.last.id)}
                 >
                   <td className="border p-2">
-                    ⚠️ {s.dossard}{" "}
+                    {s.dossard.startsWith("P") ? (
+                      <span className="text-xs bg-purple-100 text-purple-700 rounded px-1 py-0.5 font-medium mr-1">{t("admin.pacerBadge")}</span>
+                    ) : "⚠️ "}
+                    {s.dossard}{" "}
                     <span className="text-xs text-gray-500">({marshals[s.lastMarshalId] || "?"})</span>
                     {s.last?.latitude != null && (
                       <button onClick={(e) => handleMapIconClick(e, s.last.id)} className="ml-1 text-blue-500 hover:text-blue-700 align-middle" title={t("admin.showMap")}>
@@ -631,11 +629,14 @@ export default function AdminControleCoureurs() {
               {filteredGroups.koThenOk.map((s) => (
                 <tr
                   key={s.dossard}
-                  className={`border-t cursor-pointer ${selectedControleId === s.last?.id ? "bg-orange-50" : "hover:bg-gray-50"}`}
+                  className={`border-t cursor-pointer ${selectedControleId === s.last?.id ? "bg-orange-50" : s.dossard.startsWith("P") ? "bg-purple-50/60 hover:bg-purple-50" : "hover:bg-gray-50"}`}
                   onClick={() => s.last && handleRowClick(s.last.id)}
                 >
                   <td className="border p-2">
-                    ⚠️ {s.dossard}
+                    {s.dossard.startsWith("P") ? (
+                      <span className="text-xs bg-purple-100 text-purple-700 rounded px-1 py-0.5 font-medium mr-1">{t("admin.pacerBadge")}</span>
+                    ) : "⚠️ "}
+                    {s.dossard}
                     {s.last?.latitude != null && (
                       <button onClick={(e) => handleMapIconClick(e, s.last.id)} className="ml-1 text-blue-500 hover:text-blue-700 align-middle" title={t("admin.showMap")}>
                         <MapPin size={13} className="inline" />
@@ -678,10 +679,13 @@ export default function AdminControleCoureurs() {
               {filteredGroups.okDirect.map((s) => (
                 <tr
                   key={s.dossard}
-                  className={`border-t cursor-pointer ${selectedControleId === s.last?.id ? "bg-orange-50" : "hover:bg-gray-50"}`}
+                  className={`border-t cursor-pointer ${selectedControleId === s.last?.id ? "bg-orange-50" : s.dossard.startsWith("P") ? "bg-purple-50/60 hover:bg-purple-50" : "hover:bg-gray-50"}`}
                   onClick={() => s.last && handleRowClick(s.last.id)}
                 >
                   <td className="border p-2">
+                    {s.dossard.startsWith("P") && (
+                      <span className="text-xs bg-purple-100 text-purple-700 rounded px-1 py-0.5 font-medium mr-1">{t("admin.pacerBadge")}</span>
+                    )}
                     {s.dossard}
                     {s.last?.latitude != null && (
                       <button onClick={(e) => handleMapIconClick(e, s.last.id)} className="ml-1 text-blue-500 hover:text-blue-700 align-middle" title={t("admin.showMap")}>

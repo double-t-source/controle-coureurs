@@ -24,6 +24,7 @@
   "allowedRange": "Allowed range: {{min}} – {{max}}",
   "bibOutOfRange": "Bib number out of range for this race.",
   "koRequiredMsg": "For a KO, please select a missing gear item or enter a comment.",
+  "pacer": "Pacer",
   "geo": {
     "modeNo": "Disabled",
     "modeOptional": "Optional (bypassable)",
@@ -101,7 +102,8 @@
     "internalCommentPlaceholder": "Add a note...",
     "internalCommentEmpty": "Add...",
     "editInternalComment": "Click to edit internal note",
-    "save": "Save"
+    "save": "Save",
+    "pacerBadge": "Pacer"
   },
   "superAdmin": {
     "title": "Super Admin",
@@ -172,6 +174,7 @@
     "purgeConfirm": "Delete all controls for race \"{{name}}\" ({{count}} total)? This action cannot be undone.",
     "purgePasswordPrompt": "Enter the super-admin password to confirm purging \"{{name}}\".",
     "purgeConfirmBtn": "Confirm purge",
-    "purgeWrongPw": "Incorrect password."
+    "purgeWrongPw": "Incorrect password.",
+    "racePacers": "Pacers"
   }
 }
