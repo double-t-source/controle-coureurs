@@ -52,9 +52,18 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
     if (ev) {
       setReportEmail(ev.report_email || "");
       setReportEnabled(ev.report_enabled ?? false);
-      setReportSaveStatus(null);
     }
-  }, [expandedId, events]);
+    setReportSaveStatus(null);
+  }, [expandedId]);
+
+  useEffect(() => {
+    if (!expandedId) return;
+    const ev = events.find(e => e.id === expandedId);
+    if (ev) {
+      setReportEmail(ev.report_email || "");
+      setReportEnabled(ev.report_enabled ?? false);
+    }
+  }, [events]);
 
   useEffect(() => {
     if (!expandedId) {
