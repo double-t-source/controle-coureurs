@@ -195,6 +195,7 @@
     "logsRefresh": "Actualiser",
     "logsLoading": "Chargement...",
     "logsEmpty": "Aucune activité enregistrée.",
+    "logsTableMissing": "⚠️ Table activity_logs introuvable — veuillez exécuter le SQL de création. Les contrôles sont affichés mais les actions admin ne seront pas enregistrées.",
     "logsActorSuperadmin": "Superadmin",
     "logsType_event": "Évènement",
     "logsType_race": "Course",

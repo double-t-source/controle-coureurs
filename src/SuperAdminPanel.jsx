@@ -8,21 +8,18 @@ async function sha256Hex(s) {
 }
 
 async function logActivity({ action, entityType, entityId = null, description, details = null, actorType = "superadmin", actorId = null, actorName = null, eventId = null }) {
-  try {
-    await supabase.from("activity_logs").insert({
-      action,
-      entity_type: entityType,
-      entity_id: entityId,
-      description,
-      details,
-      actor_type: actorType,
-      actor_id: actorId,
-      actor_name: actorName,
-      event_id: eventId,
-    });
-  } catch {
-    // Non-blocking — log failures don't affect user actions
-  }
+  const { error } = await supabase.from("activity_logs").insert({
+    action,
+    entity_type: entityType,
+    entity_id: entityId,
+    description,
+    details,
+    actor_type: actorType,
+    actor_id: actorId,
+    actor_name: actorName,
+    event_id: eventId,
+  });
+  if (error) console.error("[activity_logs] insert failed:", error.message, { action, description });
 }
 
 // ─── Events & Races Tab ────────────────────────────────────────────────────
@@ -1180,10 +1177,14 @@ function LogsTab({ t }) {
         .limit(200),
     ]);
 
-    if (ctrlResult.error || logResult.error) {
+    if (ctrlResult.error) {
       setError(t("superAdmin.loadError"));
       setLoading(false);
       return;
+    }
+    if (logResult.error) {
+      console.error("[activity_logs] select failed:", logResult.error.message);
+      setError(t("superAdmin.logsTableMissing"));
     }
 
     const controlEntries = (ctrlResult.data || []).map(c => ({

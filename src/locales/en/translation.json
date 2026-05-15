@@ -195,6 +195,7 @@
     "logsRefresh": "Refresh",
     "logsLoading": "Loading...",
     "logsEmpty": "No activity recorded.",
+    "logsTableMissing": "⚠️ activity_logs table not found — please run the setup SQL. Controls are shown but admin actions will not be recorded.",
     "logsActorSuperadmin": "Superadmin",
     "logsType_event": "Event",
     "logsType_race": "Race",
