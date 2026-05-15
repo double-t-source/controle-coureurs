@@ -105,7 +105,7 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'),
   )
   const RESEND_KEY = Deno.env.get('RESEND_API_KEY')
-  const REPORT_TO = Deno.env.get('REPORT_TO_EMAIL').split(',').map(e => e.trim())
+  const REPORT_TO = Deno.env.get('REPORT_TO_EMAIL').split(',').map(e => e.trim()).filter(Boolean)
 
   let force = false
   let forceEventId = null
@@ -167,7 +167,7 @@ Deno.serve(async (req) => {
     }
 
     const html = wrapEmail(`${esc(event.name)} — Control Report — ${dateStr}`, subtitle(controls?.length), bodyHtml)
-    const ok = await sendEmail(RESEND_KEY, event.report_email.split(',').map(e => e.trim()), `[${event.name}] Daily Report — ${dateStr}`, html, REPORT_TO)
+    const ok = await sendEmail(RESEND_KEY, event.report_email.split(',').map(e => e.trim()).filter(Boolean), `[${event.name}] Daily Report — ${dateStr}`, html, REPORT_TO)
     return new Response(
       JSON.stringify({ message: ok ? 'Report sent.' : 'No controls in the last 24 hours for this event.' }),
       { status: ok ? 200 : 500, headers: CORS },
@@ -240,7 +240,7 @@ Deno.serve(async (req) => {
       for (const race of Object.values(raceMap)) bodyHtml += buildRaceSection(race.name, race.controls, gearMap)
 
       const html = wrapEmail(`${esc(event.name)} — Control Report — ${dateStr}`, subtitle(evControls.length), bodyHtml)
-      await sendEmail(RESEND_KEY, event.report_email.split(',').map(e => e.trim()), `[${event.name}] Daily Report — ${dateStr}`, html, REPORT_TO)
+      await sendEmail(RESEND_KEY, event.report_email.split(',').map(e => e.trim()).filter(Boolean), `[${event.name}] Daily Report — ${dateStr}`, html, REPORT_TO)
     }
   }
 
