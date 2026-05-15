@@ -7,7 +7,7 @@ async function sha256Hex(s) {
   return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function logActivity({ action, entityType, entityId = null, description, details = null, actorType = "superadmin", actorId = null, actorName = null, eventId = null }) {
+async function logActivity({ action, entityType, entityId = null, description, details = null, actorType = "superadmin", actorId = null, actorName = null, eventId = null, actor = null }) {
   const { error } = await supabase.from("activity_logs").insert({
     action,
     entity_type: entityType,
@@ -15,8 +15,8 @@ async function logActivity({ action, entityType, entityId = null, description, d
     description,
     details,
     actor_type: actorType,
-    actor_id: actorId,
-    actor_name: actorName,
+    actor_id: actor?.id ?? actorId,
+    actor_name: actor?.display_name ?? actorName,
     event_id: eventId,
   });
   if (error) console.error("[activity_logs] insert failed:", error.message, { action, description });
@@ -24,7 +24,7 @@ async function logActivity({ action, entityType, entityId = null, description, d
 
 // ─── Events & Races Tab ────────────────────────────────────────────────────
 
-function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onRefreshRaces }) {
+function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onRefreshRaces, actor }) {
   const [expandedId, setExpandedId] = useState(null);
   const [editingEventId, setEditingEventId] = useState(null);
   const [editEventName, setEditEventName] = useState("");
@@ -109,11 +109,11 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
       await supabase.from("marshal_event_assignments").delete()
         .eq("event_id", eventId).eq("marshal_id", marshalId);
       setAssignedMarshalIds(prev => { const s = new Set(prev); s.delete(marshalId); return s; });
-      logActivity({ action: "assignment.marshal_removed", entityType: "assignment", description: `Commissaire retiré de "${ev?.name}" : ${marshalName}`, eventId });
+      logActivity({ action: "assignment.marshal_removed", entityType: "assignment", description: `Commissaire retiré de "${ev?.name}" : ${marshalName}`, eventId, actor });
     } else {
       await supabase.from("marshal_event_assignments").insert({ event_id: eventId, marshal_id: marshalId });
       setAssignedMarshalIds(prev => new Set([...prev, marshalId]));
-      logActivity({ action: "assignment.marshal_added", entityType: "assignment", description: `Commissaire assigné à "${ev?.name}" : ${marshalName}`, eventId });
+      logActivity({ action: "assignment.marshal_added", entityType: "assignment", description: `Commissaire assigné à "${ev?.name}" : ${marshalName}`, eventId, actor });
     }
   };
 
@@ -126,11 +126,11 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
       await supabase.from("event_gear").delete()
         .eq("event_id", eventId).eq("gear_id", gearId);
       setAssignedGearIds(prev => { const s = new Set(prev); s.delete(gearId); return s; });
-      logActivity({ action: "assignment.gear_removed", entityType: "assignment", description: `Équipement retiré de "${ev?.name}" : ${gearLabel}`, eventId });
+      logActivity({ action: "assignment.gear_removed", entityType: "assignment", description: `Équipement retiré de "${ev?.name}" : ${gearLabel}`, eventId, actor });
     } else {
       await supabase.from("event_gear").insert({ event_id: eventId, gear_id: gearId });
       setAssignedGearIds(prev => new Set([...prev, gearId]));
-      logActivity({ action: "assignment.gear_added", entityType: "assignment", description: `Équipement assigné à "${ev?.name}" : ${gearLabel}`, eventId });
+      logActivity({ action: "assignment.gear_added", entityType: "assignment", description: `Équipement assigné à "${ev?.name}" : ${gearLabel}`, eventId, actor });
     }
   };
 
@@ -142,14 +142,14 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
     if (toInsert.length > 0) await supabase.from("marshal_event_assignments").insert(toInsert);
     setAssignedMarshalIds(new Set(marshals.filter(m => m.isActive).map(m => m.id)));
     const ev = events.find(e => e.id === eventId);
-    logActivity({ action: "assignment.all_marshals_added", entityType: "assignment", description: `Tous les commissaires assignés à "${ev?.name}"`, eventId });
+    logActivity({ action: "assignment.all_marshals_added", entityType: "assignment", description: `Tous les commissaires assignés à "${ev?.name}"`, eventId, actor });
   };
 
   const unselectAllMarshals = async (eventId) => {
     await supabase.from("marshal_event_assignments").delete().eq("event_id", eventId);
     setAssignedMarshalIds(new Set());
     const ev = events.find(e => e.id === eventId);
-    logActivity({ action: "assignment.all_marshals_removed", entityType: "assignment", description: `Tous les commissaires retirés de "${ev?.name}"`, eventId });
+    logActivity({ action: "assignment.all_marshals_removed", entityType: "assignment", description: `Tous les commissaires retirés de "${ev?.name}"`, eventId, actor });
   };
 
   const selectAllGear = async (eventId) => {
@@ -160,14 +160,14 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
     if (toInsert.length > 0) await supabase.from("event_gear").insert(toInsert);
     setAssignedGearIds(new Set(gear.map(g => g.id)));
     const ev = events.find(e => e.id === eventId);
-    logActivity({ action: "assignment.all_gear_added", entityType: "assignment", description: `Tout l'équipement assigné à "${ev?.name}"`, eventId });
+    logActivity({ action: "assignment.all_gear_added", entityType: "assignment", description: `Tout l'équipement assigné à "${ev?.name}"`, eventId, actor });
   };
 
   const unselectAllGear = async (eventId) => {
     await supabase.from("event_gear").delete().eq("event_id", eventId);
     setAssignedGearIds(new Set());
     const ev = events.find(e => e.id === eventId);
-    logActivity({ action: "assignment.all_gear_removed", entityType: "assignment", description: `Tout l'équipement retiré de "${ev?.name}"`, eventId });
+    logActivity({ action: "assignment.all_gear_removed", entityType: "assignment", description: `Tout l'équipement retiré de "${ev?.name}"`, eventId, actor });
   };
 
   // ── Event report settings ──
@@ -225,7 +225,7 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
 
   const confirmPurge = async (race) => {
     const hash = await sha256Hex(purgePassword);
-    if (hash !== import.meta.env.VITE_SUPERADMIN_PW_HASH) {
+    if (hash !== actor?.password_hash) {
       setPurgeError(t("superAdmin.purgeWrongPw"));
       return;
     }
@@ -235,7 +235,7 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
       return;
     }
     const evName = events.find(e => e.id === race.event_id)?.name;
-    logActivity({ action: "control.purged", entityType: "purge", entityId: race.id, description: `Contrôles purgés : course "${race.name}" (évènement "${evName}")`, details: { deleted_count: purgeCount }, eventId: race.event_id });
+    logActivity({ action: "control.purged", entityType: "purge", entityId: race.id, description: `Contrôles purgés : course "${race.name}" (évènement "${evName}")`, details: { deleted_count: purgeCount }, eventId: race.event_id, actor });
     setPurgingRaceId(null);
     setPurgePassword("");
     setPurgeError("");
@@ -262,7 +262,7 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
     setAddingEvent(false);
     setNewEventName("");
     setNewEventDate("");
-    logActivity({ action: "event.created", entityType: "event", entityId: data?.id, description: `Évènement créé : "${name}"`, eventId: data?.id });
+    logActivity({ action: "event.created", entityType: "event", entityId: data?.id, description: `Évènement créé : "${name}"`, eventId: data?.id, actor });
     onRefreshEvents();
   };
 
@@ -280,14 +280,14 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
     const { error } = await supabase.from("events").update({ name, date: editEventDate, geolocation_mode: editGeoMode }).eq("id", id);
     if (error) { setSaveError(t("superAdmin.saveError")); return; }
     setEditingEventId(null);
-    logActivity({ action: "event.updated", entityType: "event", entityId: id, description: `Évènement modifié : "${name}"`, details: { date: editEventDate, geo: editGeoMode }, eventId: id });
+    logActivity({ action: "event.updated", entityType: "event", entityId: id, description: `Évènement modifié : "${name}"`, details: { date: editEventDate, geo: editGeoMode }, eventId: id, actor });
     onRefreshEvents();
   };
 
   const toggleLock = async (id, current) => {
     await supabase.from("events").update({ isLocked: !current }).eq("id", id);
     const ev = events.find(e => e.id === id);
-    logActivity({ action: !current ? "event.locked" : "event.unlocked", entityType: "event", entityId: id, description: `Évènement ${!current ? "verrouillé" : "déverrouillé"} : "${ev?.name}"`, eventId: id });
+    logActivity({ action: !current ? "event.locked" : "event.unlocked", entityType: "event", entityId: id, description: `Évènement ${!current ? "verrouillé" : "déverrouillé"} : "${ev?.name}"`, eventId: id, actor });
     onRefreshEvents();
   };
 
@@ -301,7 +301,7 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
     if (count > 0) await supabase.from("races").delete().eq("event_id", ev.id);
     await supabase.from("events").delete().eq("id", ev.id);
     if (expandedId === ev.id) setExpandedId(null);
-    logActivity({ action: "event.deleted", entityType: "event", entityId: ev.id, description: `Évènement supprimé : "${ev.name}"`, details: count > 0 ? { races_count: count } : null });
+    logActivity({ action: "event.deleted", entityType: "event", entityId: ev.id, description: `Évènement supprimé : "${ev.name}"`, details: count > 0 ? { races_count: count } : null, actor });
     onRefreshEvents();
     onRefreshRaces();
   };
@@ -334,7 +334,7 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
     if (error) { setRaceError(t("superAdmin.saveError")); return; }
     setAddingRaceForId(null);
     const evName = events.find(e => e.id === eventId)?.name;
-    logActivity({ action: "race.created", entityType: "race", entityId: data?.id, description: `Course créée : "${name}" (évènement "${evName}")`, eventId });
+    logActivity({ action: "race.created", entityType: "race", entityId: data?.id, description: `Course créée : "${name}" (évènement "${evName}")`, eventId, actor });
     onRefreshRaces();
   };
 
@@ -362,7 +362,7 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
     if (error) { setRaceError(t("superAdmin.saveError")); return; }
     setEditingRaceId(null);
     const evName = events.find(e => e.id === race.event_id)?.name;
-    logActivity({ action: "race.updated", entityType: "race", entityId: race.id, description: `Course modifiée : "${name}" (évènement "${evName}")`, eventId: race.event_id });
+    logActivity({ action: "race.updated", entityType: "race", entityId: race.id, description: `Course modifiée : "${name}" (évènement "${evName}")`, eventId: race.event_id, actor });
     onRefreshRaces();
   };
 
@@ -377,7 +377,7 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
     if (!window.confirm(msg)) return;
     await supabase.from("races").delete().eq("id", race.id);
     const evName = events.find(e => e.id === race.event_id)?.name;
-    logActivity({ action: "race.deleted", entityType: "race", entityId: race.id, description: `Course supprimée : "${race.name}" (évènement "${evName}")`, details: count > 0 ? { controls_count: count } : null, eventId: race.event_id });
+    logActivity({ action: "race.deleted", entityType: "race", entityId: race.id, description: `Course supprimée : "${race.name}" (évènement "${evName}")`, details: count > 0 ? { controls_count: count } : null, eventId: race.event_id, actor });
     onRefreshRaces();
   };
 
@@ -838,7 +838,7 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
 
 // ─── Gear Tab ─────────────────────────────────────────────────────────────
 
-function GearTab({ t, gear, onRefresh }) {
+function GearTab({ t, gear, onRefresh, actor }) {
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ code: "", label_fr: "", label_en: "" });
   const [adding, setAdding] = useState(false);
@@ -863,7 +863,7 @@ function GearTab({ t, gear, onRefresh }) {
       return;
     }
     setEditingId(null);
-    logActivity({ action: "gear.updated", entityType: "gear", entityId: id, description: `Équipement modifié : "${editForm.code.trim()}" (${editForm.label_fr.trim()})` });
+    logActivity({ action: "gear.updated", entityType: "gear", entityId: id, description: `Équipement modifié : "${editForm.code.trim()}" (${editForm.label_fr.trim()})`, actor });
     onRefresh();
   };
 
@@ -879,14 +879,14 @@ function GearTab({ t, gear, onRefresh }) {
     }
     setAdding(false);
     setNewForm({ code: "", label_fr: "", label_en: "" });
-    logActivity({ action: "gear.created", entityType: "gear", entityId: inserted?.id, description: `Équipement créé : "${code}" (${label_fr})` });
+    logActivity({ action: "gear.created", entityType: "gear", entityId: inserted?.id, description: `Équipement créé : "${code}" (${label_fr})`, actor });
     onRefresh();
   };
 
   const deleteGear = async (g) => {
     if (!window.confirm(t("superAdmin.deleteGearConfirm", { code: g.code }))) return;
     await supabase.from("gear").delete().eq("id", g.id);
-    logActivity({ action: "gear.deleted", entityType: "gear", entityId: g.id, description: `Équipement supprimé : "${g.code}" (${g.label_fr})` });
+    logActivity({ action: "gear.deleted", entityType: "gear", entityId: g.id, description: `Équipement supprimé : "${g.code}" (${g.label_fr})`, actor });
     onRefresh();
   };
 
@@ -969,7 +969,7 @@ function GearTab({ t, gear, onRefresh }) {
 
 // ─── Marshals Tab ──────────────────────────────────────────────────────────
 
-function MarshalsTab({ t, marshals, races, onRefresh }) {
+function MarshalsTab({ t, marshals, races, onRefresh, actor }) {
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ firstName: "", lastName: "" });
   const [adding, setAdding] = useState(false);
@@ -1011,7 +1011,7 @@ function MarshalsTab({ t, marshals, races, onRefresh }) {
     }).eq("id", id);
     if (err) { setError(t("superAdmin.saveError")); return; }
     setEditingId(null);
-    logActivity({ action: "marshal.updated", entityType: "marshal", entityId: id, description: `Commissaire modifié : "${editForm.lastName.trim()} ${editForm.firstName.trim()}"` });
+    logActivity({ action: "marshal.updated", entityType: "marshal", entityId: id, description: `Commissaire modifié : "${editForm.lastName.trim()} ${editForm.firstName.trim()}"`, actor });
     onRefresh();
   };
 
@@ -1027,13 +1027,13 @@ function MarshalsTab({ t, marshals, races, onRefresh }) {
     if (err) { setError(t("superAdmin.saveError")); return; }
     setAdding(false);
     setNewForm({ firstName: "", lastName: "" });
-    logActivity({ action: "marshal.created", entityType: "marshal", entityId: inserted?.id, description: `Commissaire créé : "${lastName} ${firstName}"` });
+    logActivity({ action: "marshal.created", entityType: "marshal", entityId: inserted?.id, description: `Commissaire créé : "${lastName} ${firstName}"`, actor });
     onRefresh();
   };
 
   const toggleActive = async (m) => {
     await supabase.from("marshals").update({ isActive: !m.isActive }).eq("id", m.id);
-    logActivity({ action: m.isActive ? "marshal.deactivated" : "marshal.activated", entityType: "marshal", entityId: m.id, description: `Commissaire ${!m.isActive ? "activé" : "désactivé"} : "${m.lastName} ${m.firstName}"` });
+    logActivity({ action: m.isActive ? "marshal.deactivated" : "marshal.activated", entityType: "marshal", entityId: m.id, description: `Commissaire ${!m.isActive ? "activé" : "désactivé"} : "${m.lastName} ${m.firstName}"`, actor });
     onRefresh();
   };
 
@@ -1041,7 +1041,7 @@ function MarshalsTab({ t, marshals, races, onRefresh }) {
     const fullName = `${m.firstName} ${m.lastName}`;
     if (!window.confirm(t("superAdmin.deleteMarshalConfirm", { name: fullName }))) return;
     await supabase.from("marshals").delete().eq("id", m.id);
-    logActivity({ action: "marshal.deleted", entityType: "marshal", entityId: m.id, description: `Commissaire supprimé : "${m.lastName} ${m.firstName}"` });
+    logActivity({ action: "marshal.deleted", entityType: "marshal", entityId: m.id, description: `Commissaire supprimé : "${m.lastName} ${m.firstName}"`, actor });
     onRefresh();
   };
 
@@ -1300,9 +1300,10 @@ function LogsTab({ t }) {
 
 export default function SuperAdminPanel() {
   const { t } = useTranslation();
-  const HASH = import.meta.env.VITE_SUPERADMIN_PW_HASH;
 
-  const [ok, setOk] = useState(() => sessionStorage.getItem("superadmin_ok") === "1");
+  const [currentUser, setCurrentUser] = useState(null); // { id, display_name, password_hash }
+  const [superadminList, setSuperadminList] = useState([]);
+  const [selectedName, setSelectedName] = useState(() => sessionStorage.getItem("superadmin_name") || "");
   const [pw, setPw] = useState("");
   const [isAuthing, setIsAuthing] = useState(false);
   const [activeTab, setActiveTab] = useState("events");
@@ -1327,15 +1328,28 @@ export default function SuperAdminPanel() {
     setTimeout(() => setReportStatus(null), 5000);
   };
 
+  useEffect(() => {
+    const fetchSuperadmins = async () => {
+      const { data } = await supabase
+        .from("superadmins")
+        .select("id, display_name, password_hash")
+        .eq("active", true)
+        .order("display_name");
+      setSuperadminList(data || []);
+    };
+    fetchSuperadmins();
+  }, []);
+
   const tryLogin = async (e) => {
     e.preventDefault();
-    if (!HASH) { alert(t("superAdmin.authHashMissingAlert")); return; }
+    const account = superadminList.find(a => a.display_name === selectedName);
+    if (!account) return;
     try {
       setIsAuthing(true);
       const hash = await sha256Hex(pw);
-      if (hash === HASH) {
-        sessionStorage.setItem("superadmin_ok", "1");
-        setOk(true);
+      if (hash === account.password_hash) {
+        sessionStorage.setItem("superadmin_name", account.display_name);
+        setCurrentUser({ id: account.id, display_name: account.display_name, password_hash: account.password_hash });
         setPw("");
       } else {
         alert(t("superAdmin.authWrongPw"));
@@ -1346,8 +1360,7 @@ export default function SuperAdminPanel() {
   };
 
   const logout = () => {
-    sessionStorage.removeItem("superadmin_ok");
-    setOk(false);
+    setCurrentUser(null);
   };
 
   const fetchEvents = async () => {
@@ -1375,13 +1388,13 @@ export default function SuperAdminPanel() {
   };
 
   useEffect(() => {
-    if (!ok) return;
+    if (!currentUser) return;
     fetchEvents();
     fetchRaces();
     fetchGear();
     fetchMarshals();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ok]);
+  }, [currentUser]);
 
   const TABS = ["events", "gear", "marshals", "logs"];
   const tabLabel = { events: "tabEventsRaces", gear: "tabGear", marshals: "tabMarshals", logs: "tabLogs" };
@@ -1390,8 +1403,9 @@ export default function SuperAdminPanel() {
     <div className="p-4 max-w-4xl mx-auto">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">{t("superAdmin.title")}</h1>
-        {ok && (
+        {currentUser && (
           <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-500 hidden sm:inline">{currentUser.display_name}</span>
             <button
               onClick={sendReport}
               disabled={reportStatus === "sending"}
@@ -1406,7 +1420,7 @@ export default function SuperAdminPanel() {
         )}
       </div>
 
-      {ok && (
+      {currentUser && (
         <>
           {loadError && <p className="text-sm text-red-600 mb-4">{loadError}</p>}
           {reportStatus === "success" && <p className="text-sm text-green-700 mb-4">{t("superAdmin.sendReportSuccess")}</p>}
@@ -1439,13 +1453,14 @@ export default function SuperAdminPanel() {
               gear={gear}
               onRefreshEvents={fetchEvents}
               onRefreshRaces={fetchRaces}
+              actor={currentUser}
             />
           )}
           {activeTab === "gear" && (
-            <GearTab t={t} gear={gear} onRefresh={fetchGear} />
+            <GearTab t={t} gear={gear} onRefresh={fetchGear} actor={currentUser} />
           )}
           {activeTab === "marshals" && (
-            <MarshalsTab t={t} marshals={marshals} races={races} onRefresh={fetchMarshals} />
+            <MarshalsTab t={t} marshals={marshals} races={races} onRefresh={fetchMarshals} actor={currentUser} />
           )}
           {activeTab === "logs" && (
             <LogsTab t={t} />
@@ -1454,11 +1469,26 @@ export default function SuperAdminPanel() {
       )}
 
       {/* Auth overlay */}
-      {!ok && (
+      {!currentUser && (
         <div className="fixed inset-0 z-50 bg-white/90 backdrop-blur-sm grid place-items-center p-4">
           <form onSubmit={tryLogin} className="w-full max-w-xs space-y-3 border rounded-lg bg-white p-5 shadow">
             <h1 className="text-lg font-semibold">{t("superAdmin.authTitle")}</h1>
             <p className="text-sm text-gray-600">{t("superAdmin.authDesc")}</p>
+            {superadminList.length === 0 ? (
+              <p className="text-xs text-red-600">{t("superAdmin.authNoAccounts")}</p>
+            ) : (
+              <select
+                className="w-full border rounded p-2"
+                value={selectedName}
+                onChange={e => setSelectedName(e.target.value)}
+                disabled={isAuthing}
+              >
+                <option value="">{t("superAdmin.authSelectAccount")}</option>
+                {superadminList.map(a => (
+                  <option key={a.id} value={a.display_name}>{a.display_name}</option>
+                ))}
+              </select>
+            )}
             <input
               type="password"
               className="w-full border rounded p-2"
@@ -1468,12 +1498,9 @@ export default function SuperAdminPanel() {
               autoFocus
               disabled={isAuthing}
             />
-            <button className="w-full bg-blue-600 text-white rounded p-2 disabled:opacity-60" disabled={isAuthing}>
+            <button className="w-full bg-blue-600 text-white rounded p-2 disabled:opacity-60" disabled={isAuthing || !selectedName}>
               {isAuthing ? t("superAdmin.authChecking") : t("superAdmin.authEnter")}
             </button>
-            {!HASH && (
-              <p className="text-xs text-red-600 mt-2">{t("superAdmin.authHashMissing")}</p>
-            )}
           </form>
         </div>
       )}

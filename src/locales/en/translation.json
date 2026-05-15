@@ -108,7 +108,9 @@
   "superAdmin": {
     "title": "Super Admin",
     "authTitle": "Super-admin access",
-    "authDesc": "Please enter the super-admin password to continue.",
+    "authDesc": "Select your account and enter your password.",
+    "authSelectAccount": "-- Select an account --",
+    "authNoAccounts": "No active accounts found. Check the superadmins table.",
     "authPlaceholder": "Password",
     "authChecking": "Checking...",
     "authEnter": "Enter",
