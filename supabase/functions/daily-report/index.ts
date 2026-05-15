@@ -167,7 +167,7 @@ Deno.serve(async (req) => {
     }
 
     const html = wrapEmail(`${esc(event.name)} — Control Report — ${dateStr}`, subtitle(controls?.length), bodyHtml)
-    const ok = await sendEmail(RESEND_KEY, event.report_email, `[${event.name}] Daily Report — ${dateStr}`, html, REPORT_TO)
+    const ok = await sendEmail(RESEND_KEY, event.report_email.split(',').map(e => e.trim()), `[${event.name}] Daily Report — ${dateStr}`, html, REPORT_TO)
     return new Response(
       JSON.stringify({ message: ok ? 'Report sent.' : 'No controls in the last 24 hours for this event.' }),
       { status: ok ? 200 : 500, headers: CORS },
@@ -240,7 +240,7 @@ Deno.serve(async (req) => {
       for (const race of Object.values(raceMap)) bodyHtml += buildRaceSection(race.name, race.controls, gearMap)
 
       const html = wrapEmail(`${esc(event.name)} — Control Report — ${dateStr}`, subtitle(evControls.length), bodyHtml)
-      await sendEmail(RESEND_KEY, event.report_email, `[${event.name}] Daily Report — ${dateStr}`, html, REPORT_TO)
+      await sendEmail(RESEND_KEY, event.report_email.split(',').map(e => e.trim()), `[${event.name}] Daily Report — ${dateStr}`, html, REPORT_TO)
     }
   }
 
