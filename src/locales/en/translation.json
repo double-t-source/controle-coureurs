@@ -190,6 +190,17 @@
     "reportEnableTooltip": "Click to enable report",
     "reportDisable": "Click to disable report",
     "reportSaved": "✅ Report will be sent to {{email}}",
-    "sendEventReport": "Send report now"
+    "sendEventReport": "Send report now",
+    "tabLogs": "Activity Log",
+    "logsRefresh": "Refresh",
+    "logsLoading": "Loading...",
+    "logsEmpty": "No activity recorded.",
+    "logsActorSuperadmin": "Superadmin",
+    "logsType_event": "Event",
+    "logsType_race": "Race",
+    "logsType_marshal": "Marshal",
+    "logsType_gear": "Gear",
+    "logsType_assignment": "Assignment",
+    "logsType_purge": "Purge"
   }
 }

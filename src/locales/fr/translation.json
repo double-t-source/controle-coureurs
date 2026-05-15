@@ -190,6 +190,17 @@
     "reportEnableTooltip": "Cliquer pour activer le rapport",
     "reportDisable": "Cliquer pour désactiver le rapport",
     "reportSaved": "✅ Le rapport sera envoyé à {{email}}",
-    "sendEventReport": "Envoyer le rapport maintenant"
+    "sendEventReport": "Envoyer le rapport maintenant",
+    "tabLogs": "Journal d'activité",
+    "logsRefresh": "Actualiser",
+    "logsLoading": "Chargement...",
+    "logsEmpty": "Aucune activité enregistrée.",
+    "logsActorSuperadmin": "Superadmin",
+    "logsType_event": "Évènement",
+    "logsType_race": "Course",
+    "logsType_marshal": "Commissaire",
+    "logsType_gear": "Équipement",
+    "logsType_assignment": "Assignation",
+    "logsType_purge": "Purge"
   }
 }
