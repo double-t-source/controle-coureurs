@@ -93,8 +93,9 @@ async function sendEmail(apiKey, to, subject, html, bcc = []) {
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
-  if (!res.ok) console.error('Resend error:', await res.text())
-  return res.ok
+  const body = await res.text()
+  if (!res.ok) console.error('Resend error:', body)
+  return res.ok ? true : body
 }
 
 Deno.serve(async (req) => {
@@ -167,9 +168,10 @@ Deno.serve(async (req) => {
     }
 
     const html = wrapEmail(`${esc(event.name)} — Control Report — ${dateStr}`, subtitle(controls?.length), bodyHtml)
-    const ok = await sendEmail(RESEND_KEY, event.report_email.split(',').map(e => e.trim()).filter(Boolean), `[${event.name}] Daily Report — ${dateStr}`, html, REPORT_TO)
+    const result = await sendEmail(RESEND_KEY, event.report_email.split(',').map(e => e.trim()).filter(Boolean), `[${event.name}] Daily Report — ${dateStr}`, html, REPORT_TO)
+    const ok = result === true
     return new Response(
-      JSON.stringify({ message: ok ? 'Report sent.' : 'No controls in the last 24 hours for this event.' }),
+      JSON.stringify(ok ? { message: 'Report sent.' } : { error: 'Failed to send email.', detail: result }),
       { status: ok ? 200 : 500, headers: CORS },
     )
   }
