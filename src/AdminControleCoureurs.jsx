@@ -504,6 +504,7 @@ export default function AdminControleCoureurs() {
           marshalName: marshals[last.marshal_id] || "?",
           lastOkDate: last.created_at,
           historyStr: arr.map((h) => (h.resultat === "ok" ? "✅" : "❌")).join(" → "),
+          historyStrPdf: arr.map((h) => (h.resultat === "ok" ? "OK" : "KO")).join(" > "),
         });
       }
     }
@@ -542,7 +543,7 @@ export default function AdminControleCoureurs() {
 
     autoTable(doc, {
       startY: y,
-      head: [[t("admin.bilanTotal"), "✅ OK", "❌ KO", t("admin.bilanGeo"), t("admin.bilanNonGeo")]],
+      head: [[t("admin.bilanTotal"), "OK", "KO", t("admin.bilanGeo"), t("admin.bilanNonGeo")]],
       body: [[
         data.total,
         `${data.okCount} (${pct(data.okCount)})`,
@@ -617,7 +618,7 @@ export default function AdminControleCoureurs() {
       body: data.koThenOk.map((s) => {
         const row = [s.dossard];
         if (isMultiRace) row.push(s.raceName || "?");
-        row.push(s.lastKOMissingGear || "-", s.marshalName, formatDate(s.lastOkDate), s.historyStr);
+        row.push(s.lastKOMissingGear || "-", s.marshalName, formatDate(s.lastOkDate), s.historyStrPdf);
         return row;
       }),
       styles: { fontSize: 8 },
