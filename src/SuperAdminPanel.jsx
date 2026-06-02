@@ -7,6 +7,7 @@ async function sha256Hex(s) {
   return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
+// Fire-and-forget audit trail helper — errors are logged to the console but never block the UI action.
 async function logActivity({ action, entityType, entityId = null, description, details = null, actorType = "superadmin", actorId = null, actorName = null, eventId = null, actor = null }) {
   const { error } = await supabase.from("activity_logs").insert({
     action,
@@ -223,6 +224,8 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
     setPurgeError("");
   };
 
+  // Re-verify the logged-in superadmin's password before purging — the hash comes from the DB
+  // row loaded at login, so each account has its own credential.
   const confirmPurge = async (race) => {
     const hash = await sha256Hex(purgePassword);
     if (hash !== actor?.password_hash) {
@@ -1146,6 +1149,7 @@ function MarshalsTab({ t, marshals, races, onRefresh, actor }) {
 
 // ─── Logs Tab ──────────────────────────────────────────────────────────────
 
+// Color coding for admin action badges in the logs tab, keyed by entity_type.
 const ENTITY_BADGE = {
   event:      "bg-blue-100 text-blue-700",
   race:       "bg-indigo-100 text-indigo-700",
@@ -1160,6 +1164,8 @@ function LogsTab({ t }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Merge the last 200 control records and the last 200 admin action records into a single
+  // chronological timeline, so one view shows both what marshals did and what admins changed.
   const load = async () => {
     setLoading(true);
     setError(null);
@@ -1301,6 +1307,8 @@ function LogsTab({ t }) {
 export default function SuperAdminPanel() {
   const { t } = useTranslation();
 
+  // Superadmin accounts live in the `superadmins` DB table instead of a single env-var hash,
+  // which allows multiple named accounts with individual passwords and activity attribution.
   const [currentUser, setCurrentUser] = useState(null); // { id, display_name, password_hash }
   const [superadminList, setSuperadminList] = useState([]);
   const [selectedName, setSelectedName] = useState(() => sessionStorage.getItem("superadmin_name") || "");
@@ -1316,6 +1324,8 @@ export default function SuperAdminPanel() {
 
   const [reportStatus, setReportStatus] = useState(null); // null | 'sending' | 'success' | 'no-controls' | 'error'
 
+  // Trigger the daily-report Edge Function with force: true, which sends the email even if
+  // there were no controls in the last 24 hours (useful for on-demand testing).
   const sendReport = async () => {
     setReportStatus("sending");
     try {

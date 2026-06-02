@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { supabase } from "./supabaseClient";
 
+// Two-step UX: step 1 = select context (event / race / marshal), step 2 = enter checks.
+// The context is kept in state so the marshal doesn't re-select it between each bib entry.
 const ControleCoureurs = () => {
   const { t, i18n } = useTranslation();
 
@@ -13,6 +15,7 @@ const ControleCoureurs = () => {
   const [eventInfo, setEventInfo] = useState({
     event_id: "",
     race_id: "",
+    // Persist marshal_id so returning marshals find their name pre-selected on reload.
     marshal_id: localStorage.getItem("marshal_id") || "",
   });
   const [eventList, setEventList] = useState([]);
@@ -22,10 +25,12 @@ const ControleCoureurs = () => {
   const [form, setForm] = useState({
     dossard: "",
     resultat: "ok",
-    materielManquant: "", // valeur stockée en base (toujours FR ici)
+    // Stores the gear code (language-neutral) that goes into the DB, or free text when "other" is chosen.
+    materielManquant: "",
     commentaire: "",
   });
-  const [materielCode, setMaterielCode] = useState(""); // code sélectionné dans la liste (ou "__autre__")
+  // Tracks the dropdown selection separately: either a gear code or "__autre__" for free-text entry.
+  const [materielCode, setMaterielCode] = useState("");
 
   const [isPacer, setIsPacer] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -149,7 +154,8 @@ const ControleCoureurs = () => {
     fetchEventData();
   }, [eventInfo.event_id]);
 
-  // Polling des contrôles pour la course sélectionnée
+  // Poll checks for the selected race every 3 s so that all marshals at a control point
+  // see each other's entries in real-time without a page refresh.
   useEffect(() => {
     let interval;
     const fetchControles = async () => {
@@ -183,6 +189,7 @@ const ControleCoureurs = () => {
 
   const handleEventChange = (e) => {
     const { name, value } = e.target;
+    // Persist marshal selection so the dropdown is pre-filled on next page load.
     if (name === "marshal_id") localStorage.setItem("marshal_id", value);
 
     setEventInfo((prev) => {
@@ -220,11 +227,14 @@ const ControleCoureurs = () => {
   const selectedRace = raceList.find((r) => r.id.toString() === eventInfo.race_id);
 
   const geoMode = selectedEvent?.geolocation_mode || "no";
+  // Block the "Start" button entirely when geolocation is mandatory but denied — avoids silent data loss.
   const geoBlocked = geoMode === "mandatory" && (geoStatus === "denied" || geoStatus === "unavailable");
   const raceHasPacers = selectedRace?.has_pacers ?? false;
+  // Pacers get a "P" prefix so they're distinguishable from runners with the same number.
   const effectiveDossard = isPacer && form.dossard ? "P" + form.dossard : form.dossard;
 
-  // Plage autorisée pour la course sélectionnée
+  // Bib range guard — races with range_min/range_max configured reject out-of-range bibs
+  // at the UI level before they even reach Supabase, preventing mis-entries across races.
   const allowedMin = selectedRace?.range_min ?? null;
   const allowedMax = selectedRace?.range_max ?? null;
   const bibNumber = form.dossard === "" ? null : parseInt(form.dossard, 10);
@@ -235,6 +245,8 @@ const ControleCoureurs = () => {
     (bibNumber < allowedMin || bibNumber > allowedMax);
 
   // Sélection du matériel (on stocke le FR en base pour compatibilité admin)
+  // Store the gear code (not the label) so the admin view can translate it on the fly
+  // regardless of what language the marshal was using at check time.
   const handleGearSelect = (e) => {
     const code = e.target.value;
     setMaterielCode(code);
@@ -273,6 +285,7 @@ const ControleCoureurs = () => {
       }
     }
 
+    // KO without any details is useless for race officials — require at least one of these.
     if (form.resultat === "ko" && !form.materielManquant.trim() && !form.commentaire.trim()) {
       setKoError(true);
       return;
@@ -317,12 +330,14 @@ const ControleCoureurs = () => {
       return;
     }
 
+    // Optimistically append to local list so the duplicate warning fires immediately on the next bib.
     setDossardsControles((prev) => [
       ...prev,
       { dossard: effectiveDossard, marshal_id: eventInfo.marshal_id, created_at: new Date().toISOString() },
     ]);
     setSubmitted(true);
     setSyncStatus("success");
+    // Short haptic pulse — marshals use phones and gloves, tactile feedback helps confirm submission.
     navigator.vibrate && navigator.vibrate(30);
     setForm({ dossard: "", resultat: "ok", materielManquant: "", commentaire: "" });
     setMaterielCode("");

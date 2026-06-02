@@ -7,6 +7,8 @@ import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from "react-leaf
 import { Map as MapIcon, MapPin, MessageSquare, Pencil, BarChart2 } from "lucide-react";
 import "leaflet/dist/leaflet.css";
 
+// react-leaflet's useMap() hook only works inside a MapContainer — this child component
+// bridges that constraint so the parent can trigger map panning by changing `center`.
 function MapFlyTo({ center }) {
   const map = useMap();
   useEffect(() => {
@@ -15,12 +17,14 @@ function MapFlyTo({ center }) {
   return null;
 }
 
-// Helper SHA-256 (natif navigateur)
+// SHA-256 via Web Crypto API — browser-native, no library needed, safe for client-side hash comparison.
 async function sha256Hex(s) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
   return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
+// Extracted as its own component so it maintains its own edit state independently per row,
+// avoiding re-renders of the full table when one cell enters edit mode.
 function InternalCommentCell({ dossard, current, isEditing, editValue, setEditValue, setEditingDossard, savingDossard, saveInternalComment, t }) {
   if (isEditing) {
     return (
@@ -73,11 +77,12 @@ function InternalCommentCell({ dossard, current, isEditing, editValue, setEditVa
 export default function AdminControleCoureurs() {
   const { t, i18n } = useTranslation();
 
-  // --------- Barrière mot de passe ---------
+  // Auth is sessionStorage-based: survives a page refresh but clears when the tab is closed.
+  // The password is never stored — only its SHA-256 hash (set as a build-time env var) is compared.
   const [ok, setOk] = useState(() => sessionStorage.getItem("admin_ok") === "1");
   const [pw, setPw] = useState("");
   const [isAuthing, setIsAuthing] = useState(false);
-  const HASH = import.meta.env.VITE_ADMIN_PW_HASH; // <= définir en env
+  const HASH = import.meta.env.VITE_ADMIN_PW_HASH;
 
   const tryLogin = async (e) => {
     e.preventDefault();
@@ -212,7 +217,8 @@ export default function AdminControleCoureurs() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok, eventId]);
 
-  // Polling des contrôles pour la course sélectionnée (uniquement si logué)
+  // Poll checks for the selected race every 5 s so the dashboard stays live during an event.
+  // Slightly less frequent than the marshal UI (3 s) since the admin view is read-only.
   useEffect(() => {
     if (!ok) return;
     let interval;
@@ -233,7 +239,8 @@ export default function AdminControleCoureurs() {
     return () => clearInterval(interval);
   }, [ok, raceId]);
 
-  // Charger les commentaires internes quand la course change
+  // Internal comments are admin-only notes stored in a separate table — marshals never see them.
+  // They are keyed by (race_id, dossard) so notes survive if a check record is corrected.
   useEffect(() => {
     if (!ok || !raceId) { setInternalComments({}); return; }
     const fetchInternalComments = async () => {
@@ -300,7 +307,11 @@ export default function AdminControleCoureurs() {
   const controlesKO = controles.filter((c) => c.resultat === "ko");
   const controlesOK = controles.filter((c) => c.resultat === "ok");
 
-  // ---- Groupes par dossard (historique) ----
+  // Classify each bib into one of three categories based on its full history:
+  //   stillKO   — last check was KO (runner still has a gear problem)
+  //   koThenOk  — was KO at some point but the last check is OK (resolved)
+  //   okDirect  — only ever checked OK (no gear issues at all)
+  // Sorting within each category: numeric bib order, with "P" (pacer) bibs after the runner number.
   const bibGroups = (() => {
     const map = new Map();
     for (const c of controles) {
@@ -418,6 +429,7 @@ export default function AdminControleCoureurs() {
 
     let controlesToUse = controles;
 
+    // When no race is selected, aggregate across all races of the event for a full-event summary.
     if (!raceId && eventId) {
       const raceIds = raceList.map((r) => r.id);
       if (raceIds.length > 0) {

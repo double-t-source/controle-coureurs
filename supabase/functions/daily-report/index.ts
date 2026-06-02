@@ -97,6 +97,10 @@ async function sendEmail(apiKey, to, subject, html, bcc = []) {
   return res.ok
 }
 
+// Three operating modes, resolved in order:
+//   1. force_event_id  — send the report for one specific event immediately (triggered from admin UI)
+//   2. force: true     — send the general report even if no controls in the last 24 h (manual test)
+//   3. normal cron     — send general report + all enabled per-event reports (skipped when force: true)
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
 
@@ -105,6 +109,8 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'),
   )
   const RESEND_KEY = Deno.env.get('RESEND_API_KEY')
+  // REPORT_TO is the main admin inbox — it always receives the general report
+  // and is BCC'd on event-specific emails so nothing is missed.
   const REPORT_TO = Deno.env.get('REPORT_TO_EMAIL').split(',').map(e => e.trim()).filter(Boolean)
 
   let force = false
@@ -209,7 +215,9 @@ Deno.serve(async (req) => {
     await sendEmail(RESEND_KEY, REPORT_TO, `Daily Report — ${dateStr}`, html)
   }
 
-  // ── Event-specific cron reports (skipped on force-send) ────────────────────
+  // ── Per-event scheduled reports — only on cron runs, not when force=true ──────────────────────
+  // Each event with report_enabled=true and a report_email configured gets its own email.
+  // REPORT_TO is BCC'd so the main admin always has a copy even for event-specific reports.
   if (!force) {
     const { data: enabledEvents } = await supabase
       .from('events')
