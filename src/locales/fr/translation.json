@@ -24,6 +24,7 @@
   "allowedRange": "Plage autorisée : {{min}} – {{max}}",
   "bibOutOfRange": "Dossard hors plage pour cette course.",
   "koRequiredMsg": "Pour un KO, veuillez sélectionner un matériel manquant ou saisir un commentaire.",
+  "prevKOMissing": "Toujours manquant(s) au dernier passage :",
   "pacer": "Pacer",
   "geo": {
     "modeNo": "Désactivée",

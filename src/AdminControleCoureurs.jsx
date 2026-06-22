@@ -290,9 +290,12 @@ export default function AdminControleCoureurs() {
   const currentLang = (i18n.resolvedLanguage || i18n.language).slice(0, 2);
   const labelForGear = (value) => {
     if (!value) return "-";
-    const g = gearOptions.find((x) => x.code === value);
-    if (!g) return value; // texte libre ou ancienne valeur FR
-    return currentLang === "fr" ? (g.label_fr || g.code) : (g.label_en || g.label_fr || g.code);
+    return value.split(",").map((code) => {
+      const trimmed = code.trim();
+      const g = gearOptions.find((x) => x.code === trimmed);
+      if (!g) return trimmed;
+      return currentLang === "fr" ? (g.label_fr || g.code) : (g.label_en || g.label_fr || g.code);
+    }).join(", ");
   };
 
   const formatDate = (timestamp) =>
@@ -327,6 +330,10 @@ export default function AdminControleCoureurs() {
       const hasKO = arr.some((x) => x.resultat === "ko");
       const hasOK = arr.some((x) => x.resultat === "ok");
       const lastKO = [...arr].reverse().find((x) => x.resultat === "ko") || null;
+      const allKOCodes = arr
+        .filter(x => x.resultat === "ko" && x.materiel_manquant)
+        .flatMap(x => x.materiel_manquant.split(",").map(s => s.trim()).filter(Boolean));
+      const allMissingGear = [...new Set(allKOCodes)].join(",");
 
       summaries.push({
         dossard,
@@ -339,6 +346,7 @@ export default function AdminControleCoureurs() {
         hasOK,
         wentKoThenOk: hasKO && last.resultat === "ok",
         lastKO,                       // le dernier KO (si existe)
+        allMissingGear,               // union de tous les items KO (tous passages)
       });
     }
 
@@ -495,14 +503,32 @@ export default function AdminControleCoureurs() {
       const arr = group.history.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
       const last = arr[arr.length - 1];
       const hasKO = arr.some((x) => x.resultat === "ko");
-      const lastKO = [...arr].reverse().find((x) => x.resultat === "ko") || null;
       const raceName = isMultiRace ? (raceNameMap[group.race_id] || "?") : null;
+
+      const allKOCodesBilan = arr
+        .filter(x => x.resultat === "ko" && x.materiel_manquant)
+        .flatMap(x => x.materiel_manquant.split(",").map(s => s.trim()).filter(Boolean));
+      const allMissingGearBilan = labelForGear([...new Set(allKOCodesBilan)].join(","));
+
+      const historyStr = arr.map(h => {
+        if (h.resultat === "ok") return "✅";
+        const gear = h.materiel_manquant ? ` (${labelForGear(h.materiel_manquant)})` : "";
+        return `❌${gear}`;
+      }).join(" → ");
+      const historyStrPdf = arr.map(h => {
+        if (h.resultat === "ok") return "OK";
+        const gear = h.materiel_manquant ? ` (${h.materiel_manquant.split(",").map(c => {
+          const g = gearOptions.find(x => x.code === c.trim());
+          return g ? (currentLang === "fr" ? (g.label_fr || g.code) : (g.label_en || g.label_fr || g.code)) : c;
+        }).join("+")})` : "";
+        return `KO${gear}`;
+      }).join(" > ");
 
       if (last.resultat === "ko") {
         stillKO.push({
           dossard: group.dossard,
           raceName,
-          missingGear: labelForGear(last.materiel_manquant),
+          missingGear: allMissingGearBilan,
           comment: last.commentaire || "",
           marshalName: marshals[last.marshal_id] || "?",
           date: last.created_at,
@@ -511,12 +537,12 @@ export default function AdminControleCoureurs() {
         koThenOk.push({
           dossard: group.dossard,
           raceName,
-          lastKOMissingGear: labelForGear(lastKO?.materiel_manquant),
-          lastKOComment: lastKO?.commentaire || "",
+          lastKOMissingGear: allMissingGearBilan,
+          lastKOComment: "",
           marshalName: marshals[last.marshal_id] || "?",
           lastOkDate: last.created_at,
-          historyStr: arr.map((h) => (h.resultat === "ok" ? "✅" : "❌")).join(" → "),
-          historyStrPdf: arr.map((h) => (h.resultat === "ok" ? "OK" : "KO")).join(" > "),
+          historyStr,
+          historyStrPdf,
         });
       }
     }
@@ -938,7 +964,21 @@ export default function AdminControleCoureurs() {
                       </button>
                     )}
                   </td>
-                  <td className="border p-2">{labelForGear(s.last?.materiel_manquant)}</td>
+                  <td className="border p-2">
+                    <div className="relative group inline-block w-full">
+                      <span>{labelForGear(s.last?.materiel_manquant)}</span>
+                      {s.history.filter(h => h.resultat === "ko").length > 1 && (
+                        <div className="pointer-events-none absolute z-30 hidden group-hover:block bottom-full left-0 mb-1 w-72 bg-gray-800 text-white text-xs rounded p-2 shadow-xl text-left whitespace-normal">
+                          {s.history.filter(h => h.resultat === "ko").map((h, i) => (
+                            <div key={h.id} className={i > 0 ? "mt-1.5 pt-1.5 border-t border-gray-600" : ""}>
+                              <div className="opacity-60 mb-0.5">{formatDate(h.created_at)} — {marshals[h.marshal_id] || "?"}</div>
+                              <div>{h.materiel_manquant ? labelForGear(h.materiel_manquant) : "—"}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </td>
                   <td className="border p-2 text-center"><CommentTooltip history={s.history} /></td>
                   <td className="border p-2"><InternalCommentCell dossard={s.dossard} current={internalComments[s.dossard] || ""} isEditing={editingDossard === s.dossard} editValue={editValue} setEditValue={setEditValue} setEditingDossard={setEditingDossard} savingDossard={savingDossard} saveInternalComment={saveInternalComment} t={t} /></td>
                   <td className="border p-2 whitespace-nowrap">{formatDate(s.lastAt)}</td>
@@ -988,11 +1028,15 @@ export default function AdminControleCoureurs() {
                   </td>
                   <td className="border p-2 whitespace-nowrap">{formatDate(s.lastAt)}</td>
                   <td className="border p-2">{marshals[s.lastMarshalId] || "?"}</td>
-                  <td className="border p-2">{labelForGear(s.lastKO?.materiel_manquant)}</td>
+                  <td className="border p-2">{labelForGear(s.allMissingGear)}</td>
                   <td className="border p-2 text-center"><CommentTooltip history={s.history} /></td>
                   <td className="border p-2"><InternalCommentCell dossard={s.dossard} current={internalComments[s.dossard] || ""} isEditing={editingDossard === s.dossard} editValue={editValue} setEditValue={setEditValue} setEditingDossard={setEditingDossard} savingDossard={savingDossard} saveInternalComment={saveInternalComment} t={t} /></td>
-                  <td className="border p-2">
-                    {s.history.map(h => (h.resultat === "ok" ? "✅" : "❌")).join(" → ")}
+                  <td className="border p-2 text-xs">
+                    {s.history.map(h => {
+                      if (h.resultat === "ok") return "✅";
+                      const gear = h.materiel_manquant ? ` (${labelForGear(h.materiel_manquant)})` : "";
+                      return `❌${gear}`;
+                    }).join(" → ")}
                   </td>
                 </tr>
               ))}

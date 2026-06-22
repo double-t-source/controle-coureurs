@@ -24,6 +24,7 @@
   "allowedRange": "Allowed range: {{min}} – {{max}}",
   "bibOutOfRange": "Bib number out of range for this race.",
   "koRequiredMsg": "For a KO, please select a missing gear item or enter a comment.",
+  "prevKOMissing": "Still missing from last check:",
   "pacer": "Pacer",
   "geo": {
     "modeNo": "Disabled",

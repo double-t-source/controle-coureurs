@@ -25,12 +25,11 @@ const ControleCoureurs = () => {
   const [form, setForm] = useState({
     dossard: "",
     resultat: "ok",
-    // Stores the gear code (language-neutral) that goes into the DB, or free text when "other" is chosen.
-    materielManquant: "",
     commentaire: "",
   });
-  // Tracks the dropdown selection separately: either a gear code or "__autre__" for free-text entry.
-  const [materielCode, setMaterielCode] = useState("");
+  const [selectedGearCodes, setSelectedGearCodes] = useState(new Set());
+  const [autreSelected, setAutreSelected] = useState(false);
+  const [autreText, setAutreText] = useState("");
 
   const [isPacer, setIsPacer] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -41,6 +40,7 @@ const ControleCoureurs = () => {
   const [koError, setKoError] = useState(false);
   const [marshalNames, setMarshalNames] = useState({});
   const dossardRef = useRef(null);
+  const lastPrefilledBib = useRef(null);
   const [locationList, setLocationList] = useState([]);
   const [selectedLocation, setSelectedLocation] = useState("");
 
@@ -162,7 +162,7 @@ const ControleCoureurs = () => {
       if (eventInfo.race_id) {
         const { data } = await supabase
           .from("controles")
-          .select("dossard, marshal_id, created_at")
+          .select("dossard, marshal_id, created_at, resultat, materiel_manquant")
           .eq("race_id", eventInfo.race_id);
         if (data) setDossardsControles(data);
       }
@@ -187,6 +187,30 @@ const ControleCoureurs = () => {
     if (step === 2 && dossardRef.current) dossardRef.current.focus();
   }, [step, submitted]);
 
+  // When the marshal enters a bib that was last checked KO, pre-select the still-missing chips
+  // so they only need to deselect items that are now present (rather than re-selecting everything).
+  // Deliberately omits dossardsControles from deps: we only want this to fire on bib change,
+  // not on every 3-second poll, to avoid resetting the marshal's in-progress chip selection.
+  useEffect(() => {
+    const target = isPacer && form.dossard ? "P" + form.dossard : form.dossard;
+    if (!target || target === lastPrefilledBib.current) return;
+
+    const bibChecks = dossardsControles
+      .filter(c => c.dossard === target)
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    if (bibChecks.length === 0) return;
+
+    const lastCheck = bibChecks[bibChecks.length - 1];
+    lastPrefilledBib.current = target;
+
+    if (lastCheck.resultat === "ko" && lastCheck.materiel_manquant) {
+      const codes = lastCheck.materiel_manquant.split(",").map(s => s.trim()).filter(Boolean);
+      setSelectedGearCodes(new Set(codes));
+      setForm(prev => ({ ...prev, resultat: "ko" }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.dossard, isPacer]);
+
   const handleEventChange = (e) => {
     const { name, value } = e.target;
     // Persist marshal selection so the dropdown is pre-filled on next page load.
@@ -210,13 +234,14 @@ const ControleCoureurs = () => {
       const found = value ? dossardsControles.find((c) => c.dossard === effective) : null;
       setDuplicateInfo(found || null);
     }
-    if ((name === "commentaire" && value.trim()) || (name === "materielManquant" && value.trim())) {
+    if (name === "commentaire" && value.trim()) {
       setKoError(false);
     }
   };
 
   const handleClear = () => {
     setForm((prev) => ({ ...prev, dossard: "" }));
+    lastPrefilledBib.current = null;
     dossardRef.current?.focus();
     setDuplicateInfo(null);
   };
@@ -244,19 +269,27 @@ const ControleCoureurs = () => {
     allowedMax != null &&
     (bibNumber < allowedMin || bibNumber > allowedMax);
 
-  // Sélection du matériel (on stocke le FR en base pour compatibilité admin)
-  // Store the gear code (not the label) so the admin view can translate it on the fly
-  // regardless of what language the marshal was using at check time.
-  const handleGearSelect = (e) => {
-    const code = e.target.value;
-    setMaterielCode(code);
-    if (code === "__autre__") {
-      setForm((prev) => ({ ...prev, materielManquant: "" }));
-    } else {
-      const g = gearOptions.find((x) => x.code === code);
-      setForm((prev) => ({ ...prev, materielManquant: g ? g.code : "" }));
-      if (code) setKoError(false);
-    }
+  // Items that are CURRENTLY still missing = materiel_manquant of the last check, only when that last check was KO.
+  // If the last check was OK (even partially), nothing is flagged anymore.
+  const previousKOItems = (() => {
+    if (!form.dossard) return [];
+    const bibChecks = dossardsControles
+      .filter(c => c.dossard === effectiveDossard)
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    if (bibChecks.length === 0) return [];
+    const lastCheck = bibChecks[bibChecks.length - 1];
+    if (lastCheck.resultat !== "ko" || !lastCheck.materiel_manquant) return [];
+    return lastCheck.materiel_manquant.split(",").map(s => s.trim()).filter(Boolean);
+  })();
+
+  const toggleGear = (code) => {
+    setSelectedGearCodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+    setKoError(false);
   };
 
   const handleSubmit = async (e) => {
@@ -286,7 +319,7 @@ const ControleCoureurs = () => {
     }
 
     // KO without any details is useless for race officials — require at least one of these.
-    if (form.resultat === "ko" && !form.materielManquant.trim() && !form.commentaire.trim()) {
+    if (form.resultat === "ko" && selectedGearCodes.size === 0 && !(autreSelected && autreText.trim()) && !form.commentaire.trim()) {
       setKoError(true);
       return;
     }
@@ -310,13 +343,15 @@ const ControleCoureurs = () => {
       }
     }
 
+    const gearCodes = [...selectedGearCodes];
+    if (autreSelected && autreText.trim()) gearCodes.push(autreText.trim());
     const data = {
       race_id: eventInfo.race_id,
       location_id: selectedLocation || null,
       marshal_id: eventInfo.marshal_id,
       dossard: effectiveDossard,
       resultat: form.resultat,
-      materiel_manquant: form.resultat === "ko" ? form.materielManquant : null,
+      materiel_manquant: form.resultat === "ko" && gearCodes.length > 0 ? gearCodes.join(",") : null,
       commentaire: form.commentaire,
       latitude: coords?.lat ?? null,
       longitude: coords?.lng ?? null,
@@ -333,14 +368,17 @@ const ControleCoureurs = () => {
     // Optimistically append to local list so the duplicate warning fires immediately on the next bib.
     setDossardsControles((prev) => [
       ...prev,
-      { dossard: effectiveDossard, marshal_id: eventInfo.marshal_id, created_at: new Date().toISOString() },
+      { dossard: effectiveDossard, marshal_id: eventInfo.marshal_id, created_at: new Date().toISOString(), resultat: form.resultat, materiel_manquant: data.materiel_manquant },
     ]);
     setSubmitted(true);
     setSyncStatus("success");
     // Short haptic pulse — marshals use phones and gloves, tactile feedback helps confirm submission.
     navigator.vibrate && navigator.vibrate(30);
-    setForm({ dossard: "", resultat: "ok", materielManquant: "", commentaire: "" });
-    setMaterielCode("");
+    lastPrefilledBib.current = null;
+    setForm({ dossard: "", resultat: "ok", commentaire: "" });
+    setSelectedGearCodes(new Set());
+    setAutreSelected(false);
+    setAutreText("");
     setKoError(false);
     setIsPacer(false);
     setTimeout(() => setSubmitted(false), 500);
@@ -524,6 +562,22 @@ const ControleCoureurs = () => {
             )}
             {isBibOutOfRange && <p className="text-sm text-red-600">{t("bibOutOfRange")}</p>}
 
+            {previousKOItems.length > 0 && (
+              <div className="bg-orange-50 border border-orange-200 rounded p-2 text-sm">
+                <p className="font-medium text-orange-800 mb-1.5">{t("prevKOMissing")}</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {previousKOItems.map(code => {
+                    const g = gearOptions.find(x => x.code === code);
+                    return (
+                      <span key={code} className="px-2 py-0.5 bg-orange-200 text-orange-800 rounded-full text-xs font-medium">
+                        {g ? labelFor(g) : code}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-4">
               <button
                 type="button"
@@ -545,28 +599,54 @@ const ControleCoureurs = () => {
 
             {form.resultat === "ko" && (
               <>
-                <select
-                  name="materielCode"
-                  value={materielCode}
-                  onChange={handleGearSelect}
-                  className={`w-full p-3 border rounded-md ${koError && !form.materielManquant.trim() && !form.commentaire.trim() ? "border-red-500" : ""}`}
-                  disabled={selectedEvent?.isLocked}
+                <div
+                  className={`flex flex-wrap gap-2 p-2 border rounded-md max-h-40 overflow-y-auto ${
+                    koError && selectedGearCodes.size === 0 && !(autreSelected && autreText.trim()) && !form.commentaire.trim()
+                      ? "border-red-500"
+                      : "border-gray-300"
+                  }`}
                 >
-                  <option value="">{`-- ${t("missingGear")} --`}</option>
                   {gearOptions.map((g) => (
-                    <option key={g.code} value={g.code}>
+                    <button
+                      key={g.code}
+                      type="button"
+                      onClick={() => toggleGear(g.code)}
+                      disabled={selectedEvent?.isLocked}
+                      className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors flex-shrink-0 ${
+                        selectedGearCodes.has(g.code)
+                          ? "bg-red-600 text-white border-red-600"
+                          : "bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200"
+                      }`}
+                    >
                       {labelFor(g)}
-                    </option>
+                    </button>
                   ))}
-                  <option value="__autre__">{t("other")}</option>
-                </select>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAutreSelected((prev) => !prev);
+                      setAutreText("");
+                      setKoError(false);
+                    }}
+                    disabled={selectedEvent?.isLocked}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors flex-shrink-0 ${
+                      autreSelected
+                        ? "bg-red-600 text-white border-red-600"
+                        : "bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200"
+                    }`}
+                  >
+                    {t("other")}
+                  </button>
+                </div>
 
-                {materielCode === "__autre__" && (
+                {autreSelected && (
                   <input
-                    name="materielManquant"
                     placeholder={t("other")}
-                    value={form.materielManquant}
-                    onChange={handleFormChange}
+                    value={autreText}
+                    onChange={(e) => {
+                      setAutreText(e.target.value);
+                      if (e.target.value.trim()) setKoError(false);
+                    }}
                     className="w-full p-3 border rounded-md"
                     disabled={selectedEvent?.isLocked}
                   />
@@ -583,7 +663,7 @@ const ControleCoureurs = () => {
               placeholder={t("comment")}
               value={form.commentaire}
               onChange={handleFormChange}
-              className={`w-full p-3 border rounded-md ${koError && !form.commentaire.trim() && !form.materielManquant.trim() ? "border-red-500" : ""}`}
+              className={`w-full p-3 border rounded-md ${koError && !form.commentaire.trim() ? "border-red-500" : ""}`}
               disabled={selectedEvent?.isLocked}
             />
 
