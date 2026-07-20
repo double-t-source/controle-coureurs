@@ -512,16 +512,6 @@ const ControleCoureurs = () => {
         </div>
       ) : (
         <div className="flex flex-col justify-center h-full">
-          {competitionModeEnabled && (
-            <button
-              type="button"
-              onClick={() => setShowCompetitionDrawer(true)}
-              className="fixed top-3 right-3 z-40 flex items-center gap-1 bg-amber-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg hover:bg-amber-600 active:scale-95 transition-transform"
-            >
-              🏆 {myCompetitionRank > 0 ? `#${myCompetitionRank}` : "–"} · {myCompetitionCount}
-            </button>
-          )}
-
           {showCompetitionDrawer && (
             <div
               className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center"
@@ -757,6 +747,20 @@ const ControleCoureurs = () => {
             >
               {t("send")}
             </button>
+
+            {competitionModeEnabled && (
+              <button
+                type="button"
+                onClick={() => setShowCompetitionDrawer(true)}
+                className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-md bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold hover:bg-amber-100 active:scale-[0.98] transition-transform"
+              >
+                🏆{" "}
+                {myCompetitionRank > 0
+                  ? t("competition.badgeRanked", { rank: myCompetitionRank, count: myCompetitionCount })
+                  : t("competition.badgeUnranked")}
+                <span aria-hidden="true">›</span>
+              </button>
+            )}
 
             <div className="mt-6">
               <h3 className="text-sm font-semibold mb-2">{t("last10")}</h3>

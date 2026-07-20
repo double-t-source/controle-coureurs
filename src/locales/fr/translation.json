@@ -42,7 +42,9 @@
   "competition": {
     "title": "Classement des commissaires",
     "you": "Vous",
-    "empty": "Aucun contrôle enregistré pour le moment."
+    "empty": "Aucun contrôle enregistré pour le moment.",
+    "badgeRanked": "#{{rank}} · {{count}} contrôles",
+    "badgeUnranked": "Pas encore de contrôle enregistré"
   },
   "nav": {
     "control": "Contrôle",
