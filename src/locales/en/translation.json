@@ -39,6 +39,11 @@
     "granted": "✅ Location enabled",
     "unavailable": "Geolocation is not available on this device."
   },
+  "competition": {
+    "title": "Marshal leaderboard",
+    "you": "You",
+    "empty": "No checks recorded yet."
+  },
   "nav": {
     "control": "Checks",
     "admin": "Command Center Interface",
@@ -206,6 +211,7 @@
     "purgeWrongPw": "Incorrect password.",
     "purgeSuccessMsg": "✅ All controls for \"{{name}}\" have been deleted.",
     "racePacers": "Pacers",
+    "raceCompetitionMode": "Competition mode",
     "sendReport": "📧 Send report now",
     "sendReportSending": "Sending...",
     "sendReportSuccess": "✅ Report sent to your inbox.",

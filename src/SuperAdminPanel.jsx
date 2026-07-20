@@ -37,9 +37,9 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
   const [newGeoMode, setNewGeoMode] = useState("no");
 
   const [editingRaceId, setEditingRaceId] = useState(null);
-  const [editRaceForm, setEditRaceForm] = useState({ name: "", range_min: "", range_max: "", has_pacers: false });
+  const [editRaceForm, setEditRaceForm] = useState({ name: "", range_min: "", range_max: "", has_pacers: false, competition_mode: false });
   const [addingRaceForId, setAddingRaceForId] = useState(null);
-  const [newRaceForm, setNewRaceForm] = useState({ name: "", range_min: "", range_max: "", has_pacers: false });
+  const [newRaceForm, setNewRaceForm] = useState({ name: "", range_min: "", range_max: "", has_pacers: false, competition_mode: false });
   const [raceError, setRaceError] = useState("");
   const [saveError, setSaveError] = useState("");
 
@@ -312,7 +312,7 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
   // ── Race CRUD ──
   const startAddRace = (eventId) => {
     setAddingRaceForId(eventId);
-    setNewRaceForm({ name: "", range_min: "", range_max: "", has_pacers: false });
+    setNewRaceForm({ name: "", range_min: "", range_max: "", has_pacers: false, competition_mode: false });
     setRaceError("");
   };
 
@@ -333,6 +333,7 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
       range_min: newRaceForm.range_min ? min : null,
       range_max: newRaceForm.range_max ? max : null,
       has_pacers: newRaceForm.has_pacers,
+      competition_mode: newRaceForm.competition_mode,
     }).select("id").single();
     if (error) { setRaceError(t("superAdmin.saveError")); return; }
     setAddingRaceForId(null);
@@ -343,7 +344,7 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
 
   const startEditRace = (race) => {
     setEditingRaceId(race.id);
-    setEditRaceForm({ name: race.name, range_min: race.range_min ?? "", range_max: race.range_max ?? "", has_pacers: race.has_pacers ?? false });
+    setEditRaceForm({ name: race.name, range_min: race.range_min ?? "", range_max: race.range_max ?? "", has_pacers: race.has_pacers ?? false, competition_mode: race.competition_mode ?? false });
     setRaceError("");
   };
 
@@ -361,6 +362,7 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
       range_min: editRaceForm.range_min ? min : null,
       range_max: editRaceForm.range_max ? max : null,
       has_pacers: editRaceForm.has_pacers,
+      competition_mode: editRaceForm.competition_mode,
     }).eq("id", race.id);
     if (error) { setRaceError(t("superAdmin.saveError")); return; }
     setEditingRaceId(null);
@@ -585,6 +587,14 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
                       />
                       {t("superAdmin.racePacers")}
                     </label>
+                    <label className="flex items-center gap-1 text-xs cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={newRaceForm.competition_mode}
+                        onChange={e => setNewRaceForm(f => ({ ...f, competition_mode: e.target.checked }))}
+                      />
+                      🏆 {t("superAdmin.raceCompetitionMode")}
+                    </label>
                     <button onClick={() => addRace(ev.id)} className="px-2 py-1 bg-green-600 text-white rounded text-xs">
                       {t("superAdmin.save")}
                     </button>
@@ -632,6 +642,14 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
                               />
                               {t("superAdmin.racePacers")}
                             </label>
+                            <label className="flex items-center gap-1 text-xs cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={editRaceForm.competition_mode}
+                                onChange={e => setEditRaceForm(f => ({ ...f, competition_mode: e.target.checked }))}
+                              />
+                              🏆 {t("superAdmin.raceCompetitionMode")}
+                            </label>
                             <button onClick={() => saveRace(race)} className="px-2 py-1 bg-green-600 text-white rounded text-xs">
                               {t("superAdmin.save")}
                             </button>
@@ -650,6 +668,11 @@ function EventsRacesTab({ t, events, races, marshals, gear, onRefreshEvents, onR
                             {race.has_pacers && (
                               <span className="text-xs px-2 py-0.5 rounded flex-shrink-0 bg-purple-100 text-purple-700">
                                 {t("superAdmin.racePacers")}
+                              </span>
+                            )}
+                            {race.competition_mode && (
+                              <span className="text-xs px-2 py-0.5 rounded flex-shrink-0 bg-amber-100 text-amber-700">
+                                🏆 {t("superAdmin.raceCompetitionMode")}
                               </span>
                             )}
                             <button
@@ -1380,7 +1403,7 @@ export default function SuperAdminPanel() {
   };
 
   const fetchRaces = async () => {
-    const { data, error } = await supabase.from("races").select("id, event_id, name, range_min, range_max, has_pacers").order("name");
+    const { data, error } = await supabase.from("races").select("id, event_id, name, range_min, range_max, has_pacers, competition_mode").order("name");
     if (error) { setLoadError(t("superAdmin.loadError")); return; }
     setRaces(data || []);
   };

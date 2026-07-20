@@ -43,6 +43,7 @@ const ControleCoureurs = () => {
   const lastPrefilledBib = useRef(null);
   const [locationList, setLocationList] = useState([]);
   const [selectedLocation, setSelectedLocation] = useState("");
+  const [showCompetitionDrawer, setShowCompetitionDrawer] = useState(false);
 
   // Geolocation
   // "idle" | "requesting" | "granted" | "denied" | "unavailable"
@@ -98,7 +99,7 @@ const ControleCoureurs = () => {
 
       const { data: raceData } = await supabase
         .from("races")
-        .select("id, name, range_min, range_max, has_pacers")
+        .select("id, name, range_min, range_max, has_pacers, competition_mode")
         .eq("event_id", eventInfo.event_id)
         .order("name", { ascending: true });
       if (raceData) setRaceList(raceData);
@@ -281,6 +282,24 @@ const ControleCoureurs = () => {
     if (lastCheck.resultat !== "ko" || !lastCheck.materiel_manquant) return [];
     return lastCheck.materiel_manquant.split(",").map(s => s.trim()).filter(Boolean);
   })();
+
+  // Mode compétition (super-admin, par course) : classement en temps réel du nombre de
+  // contrôles saisis par commissaire sur la course en cours, dérivé de dossardsControles
+  // (déjà rafraîchi toutes les 3 s), sans appel réseau supplémentaire.
+  const competitionModeEnabled = !!selectedRace?.competition_mode;
+  const competitionLeaderboard = competitionModeEnabled
+    ? Object.entries(
+        dossardsControles.reduce((acc, c) => {
+          acc[c.marshal_id] = (acc[c.marshal_id] || 0) + 1;
+          return acc;
+        }, {})
+      )
+        .map(([marshalId, count]) => ({ marshalId, count, name: marshalNames[marshalId] || "?" }))
+        .sort((a, b) => b.count - a.count)
+    : [];
+  const myCompetitionRank = competitionLeaderboard.findIndex((e) => e.marshalId === eventInfo.marshal_id) + 1;
+  const myCompetitionCount = competitionLeaderboard.find((e) => e.marshalId === eventInfo.marshal_id)?.count ?? 0;
+  const competitionLeaderCount = competitionLeaderboard[0]?.count ?? 0;
 
   const toggleGear = (code) => {
     setSelectedGearCodes((prev) => {
@@ -493,6 +512,69 @@ const ControleCoureurs = () => {
         </div>
       ) : (
         <div className="flex flex-col justify-center h-full">
+          {competitionModeEnabled && (
+            <button
+              type="button"
+              onClick={() => setShowCompetitionDrawer(true)}
+              className="fixed top-3 right-3 z-40 flex items-center gap-1 bg-amber-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg hover:bg-amber-600 active:scale-95 transition-transform"
+            >
+              🏆 {myCompetitionRank > 0 ? `#${myCompetitionRank}` : "–"} · {myCompetitionCount}
+            </button>
+          )}
+
+          {showCompetitionDrawer && (
+            <div
+              className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center"
+              onClick={() => setShowCompetitionDrawer(false)}
+            >
+              <div
+                className="bg-white w-full sm:max-w-sm sm:rounded-2xl rounded-t-2xl p-4 max-h-[75vh] overflow-y-auto shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-base font-bold">🏆 {t("competition.title")}</h2>
+                  <button
+                    onClick={() => setShowCompetitionDrawer(false)}
+                    className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+                    aria-label={t("clear")}
+                  >
+                    ×
+                  </button>
+                </div>
+                {competitionLeaderboard.length === 0 ? (
+                  <p className="text-sm text-gray-500">{t("competition.empty")}</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {competitionLeaderboard.map((entry, idx) => {
+                      const rank = idx + 1;
+                      const isMe = entry.marshalId === eventInfo.marshal_id;
+                      const medal = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `#${rank}`;
+                      const pct = competitionLeaderCount > 0 ? Math.max(6, (entry.count / competitionLeaderCount) * 100) : 0;
+                      return (
+                        <li
+                          key={entry.marshalId}
+                          className={`flex items-center gap-2 p-1.5 rounded ${isMe ? "bg-amber-50 ring-1 ring-amber-300" : ""}`}
+                        >
+                          <span className="w-6 text-center text-sm flex-shrink-0">{medal}</span>
+                          <span className={`flex-1 text-sm truncate ${isMe ? "font-semibold text-amber-800" : "text-gray-700"}`}>
+                            {entry.name}
+                            {isMe && ` (${t("competition.you")})`}
+                          </span>
+                          <div className="flex items-center gap-1.5 flex-shrink-0 w-28">
+                            <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                              <div className="h-full bg-amber-500 rounded-full" style={{ width: `${pct}%` }} />
+                            </div>
+                            <span className="text-xs font-medium text-gray-600 w-6 text-right">{entry.count}</span>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            </div>
+          )}
+
           {headerText && <p className="text-center text-sm text-gray-700 mb-4 font-medium">{headerText}</p>}
 
           {selectedEvent?.isLocked && (

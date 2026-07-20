@@ -39,6 +39,11 @@
     "granted": "✅ Localisation activée",
     "unavailable": "Localisation non disponible sur cet appareil."
   },
+  "competition": {
+    "title": "Classement des commissaires",
+    "you": "Vous",
+    "empty": "Aucun contrôle enregistré pour le moment."
+  },
   "nav": {
     "control": "Contrôle",
     "admin": "Récapitulatif PC Course",
@@ -206,6 +211,7 @@
     "purgeWrongPw": "Mot de passe incorrect.",
     "purgeSuccessMsg": "✅ Tous les contrôles de \"{{name}}\" ont été supprimés.",
     "racePacers": "Pacers",
+    "raceCompetitionMode": "Mode compétition",
     "sendReport": "📧 Envoyer le rapport maintenant",
     "sendReportSending": "Envoi en cours...",
     "sendReportSuccess": "✅ Rapport envoyé dans votre boîte mail.",
