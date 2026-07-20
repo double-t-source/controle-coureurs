@@ -310,6 +310,27 @@ export default function AdminControleCoureurs() {
   const controlesKO = controles.filter((c) => c.resultat === "ko");
   const controlesOK = controles.filter((c) => c.resultat === "ok");
 
+  // Un même dossard recontrôlé plusieurs fois avec un statut inchangé ne doit compter
+  // qu'une fois dans les statistiques : on garde le premier contrôle de chaque dossard,
+  // puis chaque contrôle suivant dont le résultat diffère du contrôle précédent.
+  const computeCountedControles = (list) => {
+    const map = new Map();
+    for (const c of list) {
+      if (!map.has(c.dossard)) map.set(c.dossard, []);
+      map.get(c.dossard).push(c);
+    }
+    const counted = [];
+    for (const arr0 of map.values()) {
+      const arr = [...arr0].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      arr.forEach((c, i) => {
+        if (i === 0 || c.resultat !== arr[i - 1].resultat) counted.push(c);
+      });
+    }
+    return counted;
+  };
+
+  const countedControlesStats = computeCountedControles(controles);
+
   // Classify each bib into one of three categories based on its full history:
   //   stillKO   — last check was KO (runner still has a gear problem)
   //   koThenOk  — was KO at some point but the last check is OK (resolved)
@@ -462,16 +483,7 @@ export default function AdminControleCoureurs() {
       bibMap.get(c.dossard).history.push(c);
     }
 
-    // Un coureur recontrôlé avec le même statut ne doit pas gonfler les stats :
-    // on ne retient que le premier contrôle de chaque dossard, puis chaque contrôle
-    // suivant dont le résultat diffère du contrôle précédent (changement de statut réel).
-    const countedControles = [];
-    for (const [, group] of bibMap) {
-      const arr = [...group.history].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-      arr.forEach((c, i) => {
-        if (i === 0 || c.resultat !== arr[i - 1].resultat) countedControles.push(c);
-      });
-    }
+    const countedControles = computeCountedControles(controlesToUse);
 
     const total = countedControles.length;
     const okCount = countedControles.filter((c) => c.resultat === "ok").length;
@@ -929,7 +941,7 @@ export default function AdminControleCoureurs() {
             <h3 className="text-sm font-semibold mb-2">{t("admin.statsByMarshal")}</h3>
             <ul className="text-sm text-gray-800 list-disc list-inside">
               {Object.entries(
-                controles.reduce((acc, curr) => {
+                countedControlesStats.reduce((acc, curr) => {
                   acc[curr.marshal_id] = (acc[curr.marshal_id] || 0) + 1;
                   return acc;
                 }, {})
@@ -938,7 +950,7 @@ export default function AdminControleCoureurs() {
                 .map(([marshalId, count]) => (
                   <li key={marshalId}>
                     {marshals[marshalId] || t("admin.unknownMarshal")} : {count} {t("admin.controls")} (
-                    {((count / controles.length) * 100).toFixed(1)}%)
+                    {((count / countedControlesStats.length) * 100).toFixed(1)}%)
                   </li>
                 ))}
             </ul>
