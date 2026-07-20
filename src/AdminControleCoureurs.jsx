@@ -456,14 +456,31 @@ export default function AdminControleCoureurs() {
     const raceNameMap = {};
     if (isMultiRace) raceList.forEach((r) => (raceNameMap[r.id] = r.name));
 
-    const total = controlesToUse.length;
-    const okCount = controlesToUse.filter((c) => c.resultat === "ok").length;
-    const koCount = controlesToUse.filter((c) => c.resultat === "ko").length;
-    const geoCount = controlesToUse.filter((c) => c.latitude != null && c.longitude != null).length;
+    const bibMap = new Map();
+    for (const c of controlesToUse) {
+      if (!bibMap.has(c.dossard)) bibMap.set(c.dossard, { dossard: c.dossard, race_id: c.race_id, history: [] });
+      bibMap.get(c.dossard).history.push(c);
+    }
+
+    // Un coureur recontrôlé avec le même statut ne doit pas gonfler les stats :
+    // on ne retient que le premier contrôle de chaque dossard, puis chaque contrôle
+    // suivant dont le résultat diffère du contrôle précédent (changement de statut réel).
+    const countedControles = [];
+    for (const [, group] of bibMap) {
+      const arr = [...group.history].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      arr.forEach((c, i) => {
+        if (i === 0 || c.resultat !== arr[i - 1].resultat) countedControles.push(c);
+      });
+    }
+
+    const total = countedControles.length;
+    const okCount = countedControles.filter((c) => c.resultat === "ok").length;
+    const koCount = countedControles.filter((c) => c.resultat === "ko").length;
+    const geoCount = countedControles.filter((c) => c.latitude != null && c.longitude != null).length;
 
     const raceStats = {};
     if (isMultiRace) {
-      for (const c of controlesToUse) {
+      for (const c of countedControles) {
         if (!raceStats[c.race_id]) raceStats[c.race_id] = { name: raceNameMap[c.race_id] || "?", total: 0, ok: 0, ko: 0 };
         raceStats[c.race_id].total++;
         if (c.resultat === "ok") raceStats[c.race_id].ok++;
@@ -473,7 +490,7 @@ export default function AdminControleCoureurs() {
     const byRace = Object.values(raceStats).sort((a, b) => a.name.localeCompare(b.name));
 
     const marshalStats = {};
-    for (const c of controlesToUse) {
+    for (const c of countedControles) {
       if (!marshalStats[c.marshal_id]) marshalStats[c.marshal_id] = { total: 0, ok: 0, ko: 0 };
       marshalStats[c.marshal_id].total++;
       if (c.resultat === "ok") marshalStats[c.marshal_id].ok++;
@@ -482,12 +499,6 @@ export default function AdminControleCoureurs() {
     const byMarshal = Object.entries(marshalStats)
       .map(([id, s]) => ({ name: marshals[id] || "?", ...s }))
       .sort((a, b) => b.total - a.total);
-
-    const bibMap = new Map();
-    for (const c of controlesToUse) {
-      if (!bibMap.has(c.dossard)) bibMap.set(c.dossard, { dossard: c.dossard, race_id: c.race_id, history: [] });
-      bibMap.get(c.dossard).history.push(c);
-    }
 
     const bibSort = (a, b) => {
       const na = parseInt(a.dossard.replace(/^P/, ""), 10) || 0;
