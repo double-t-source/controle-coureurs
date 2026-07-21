@@ -324,14 +324,14 @@ const ControleCoureurs = () => {
   // so a glance at the (already-live-polled) bar tells them where they stand without opening it.
   const competitionTier =
     myCompetitionRank === 1
-      ? { medal: "🥇", classes: "bg-amber-100 border-amber-300 text-amber-900" }
+      ? { medal: "🥇 ", classes: "bg-amber-100 border-amber-300 text-amber-900" }
       : myCompetitionRank === 2
-      ? { medal: "🥈", classes: "bg-slate-200 border-slate-300 text-slate-800" }
+      ? { medal: "🥈 ", classes: "bg-slate-200 border-slate-300 text-slate-800" }
       : myCompetitionRank === 3
-      ? { medal: "🥉", classes: "bg-orange-100 border-orange-300 text-orange-800" }
+      ? { medal: "🥉 ", classes: "bg-orange-100 border-orange-300 text-orange-800" }
       : myCompetitionRank > 3
-      ? { medal: `#${myCompetitionRank}`, classes: "bg-blue-50 border-blue-200 text-blue-800" }
-      : { medal: "🏆", classes: "bg-gray-50 border-gray-200 text-gray-500" };
+      ? { medal: "", classes: "bg-blue-50 border-blue-200 text-blue-800" }
+      : { medal: "🏆 ", classes: "bg-gray-50 border-gray-200 text-gray-500" };
 
   // Briefly flash the bar whenever the marshal's own rank changes, so a climb/drop in the
   // live standings is noticeable even if they're not staring at it when the poll lands.
@@ -801,10 +801,12 @@ const ControleCoureurs = () => {
                   competitionTier.classes
                 } ${competitionPulse ? "ring-2 ring-offset-1 ring-amber-400 scale-[1.02]" : ""}`}
               >
-                {competitionTier.medal}{" "}
-                {myCompetitionRank > 0
-                  ? t("competition.badgeRanked", { rank: myCompetitionRank, count: myCompetitionCount })
-                  : t("competition.badgeUnranked")}
+                <span>
+                  {competitionTier.medal}
+                  {myCompetitionRank > 0
+                    ? t("competition.badgeRanked", { rank: myCompetitionRank, count: myCompetitionCount })
+                    : t("competition.badgeUnranked")}
+                </span>
                 <span aria-hidden="true">›</span>
               </button>
             )}
