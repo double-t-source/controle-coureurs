@@ -44,7 +44,11 @@
     "you": "You",
     "empty": "No checks recorded yet.",
     "badgeRanked": "#{{rank}} · {{count}} checks",
-    "badgeUnranked": "No checks recorded yet"
+    "badgeUnranked": "No checks recorded yet",
+    "gapLead": "+{{gap}} ahead of #2",
+    "gapTiedLead": "tied with #2",
+    "gapChase": "{{gap}} to catch #{{rank}}",
+    "gapTied": "tied with #{{rank}}"
   },
   "nav": {
     "control": "Checks",

@@ -44,7 +44,11 @@
     "you": "Vous",
     "empty": "Aucun contrôle enregistré pour le moment.",
     "badgeRanked": "#{{rank}} · {{count}} contrôles",
-    "badgeUnranked": "Pas encore de contrôle enregistré"
+    "badgeUnranked": "Pas encore de contrôle enregistré",
+    "gapLead": "+{{gap}} d'avance sur le 2e",
+    "gapTiedLead": "à égalité avec le 2e",
+    "gapChase": "{{gap}} pour dépasser le {{rank}}e",
+    "gapTied": "à égalité avec le {{rank}}e"
   },
   "nav": {
     "control": "Contrôle",

@@ -333,6 +333,24 @@ const ControleCoureurs = () => {
       ? { medal: "", classes: "bg-blue-50 border-blue-200 text-blue-800" }
       : { medal: "🏆 ", classes: "bg-gray-50 border-gray-200 text-gray-500" };
 
+  // How far the marshal is from moving up one place — controls behind the marshal directly
+  // above them, or (for the leader) controls of lead before being caught by 2nd place.
+  const competitionGapLabel = (() => {
+    if (myCompetitionRank === 0) return null;
+    if (myCompetitionRank === 1) {
+      const second = competitionLeaderboard[1];
+      if (!second) return null;
+      const gap = myCompetitionCount - second.count;
+      return gap > 0 ? t("competition.gapLead", { gap }) : t("competition.gapTiedLead");
+    }
+    const above = competitionLeaderboard[myCompetitionRank - 2];
+    if (!above) return null;
+    const gap = above.count - myCompetitionCount;
+    return gap > 0
+      ? t("competition.gapChase", { gap, rank: myCompetitionRank - 1 })
+      : t("competition.gapTied", { rank: myCompetitionRank - 1 });
+  })();
+
   // Briefly flash the bar whenever the marshal's own rank changes, so a climb/drop in the
   // live standings is noticeable even if they're not staring at it when the poll lands.
   useEffect(() => {
@@ -797,17 +815,22 @@ const ControleCoureurs = () => {
               <button
                 type="button"
                 onClick={() => setShowCompetitionDrawer(true)}
-                className={`w-full flex items-center justify-center gap-1.5 py-1.5 rounded-md border text-xs font-semibold transition-all duration-300 active:scale-[0.98] ${
+                className={`w-full flex flex-col items-center justify-center py-1.5 rounded-md border text-xs font-semibold transition-all duration-300 active:scale-[0.98] ${
                   competitionTier.classes
                 } ${competitionPulse ? "ring-2 ring-offset-1 ring-amber-400 scale-[1.02]" : ""}`}
               >
-                <span>
-                  {competitionTier.medal}
-                  {myCompetitionRank > 0
-                    ? t("competition.badgeRanked", { rank: myCompetitionRank, count: myCompetitionCount })
-                    : t("competition.badgeUnranked")}
+                <span className="flex items-center gap-1.5">
+                  <span>
+                    {competitionTier.medal}
+                    {myCompetitionRank > 0
+                      ? t("competition.badgeRanked", { rank: myCompetitionRank, count: myCompetitionCount })
+                      : t("competition.badgeUnranked")}
+                  </span>
+                  <span aria-hidden="true">›</span>
                 </span>
-                <span aria-hidden="true">›</span>
+                {competitionGapLabel && (
+                  <span className="text-[10px] font-normal opacity-80">{competitionGapLabel}</span>
+                )}
               </button>
             )}
 
