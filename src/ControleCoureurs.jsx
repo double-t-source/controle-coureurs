@@ -44,6 +44,8 @@ const ControleCoureurs = () => {
   const [locationList, setLocationList] = useState([]);
   const [selectedLocation, setSelectedLocation] = useState("");
   const [showCompetitionDrawer, setShowCompetitionDrawer] = useState(false);
+  const [competitionPulse, setCompetitionPulse] = useState(false);
+  const prevCompetitionRankRef = useRef(null);
 
   // Geolocation
   // "idle" | "requesting" | "granted" | "denied" | "unavailable"
@@ -157,6 +159,7 @@ const ControleCoureurs = () => {
 
   // Poll checks for the selected race every 3 s so that all marshals at a control point
   // see each other's entries in real-time without a page refresh.
+  // Polls a bit faster (2 s) when competition mode is on for a livelier leaderboard.
   useEffect(() => {
     let interval;
     const fetchControles = async () => {
@@ -171,10 +174,12 @@ const ControleCoureurs = () => {
 
     if (eventInfo.race_id) {
       fetchControles();
-      interval = setInterval(fetchControles, 3000);
+      const race = raceList.find((r) => r.id.toString() === eventInfo.race_id);
+      const pollMs = race?.competition_mode ? 2000 : 3000;
+      interval = setInterval(fetchControles, pollMs);
     }
     return () => clearInterval(interval);
-  }, [eventInfo.race_id]);
+  }, [eventInfo.race_id, raceList]);
 
   useEffect(() => {
     if (!form.dossard) return;
@@ -300,6 +305,32 @@ const ControleCoureurs = () => {
   const myCompetitionRank = competitionLeaderboard.findIndex((e) => e.marshalId === eventInfo.marshal_id) + 1;
   const myCompetitionCount = competitionLeaderboard.find((e) => e.marshalId === eventInfo.marshal_id)?.count ?? 0;
   const competitionLeaderCount = competitionLeaderboard[0]?.count ?? 0;
+
+  // Visual tier of the mini leaderboard bar: medal + colors follow the marshal's current rank
+  // so a glance at the (already-live-polled) bar tells them where they stand without opening it.
+  const competitionTier =
+    myCompetitionRank === 1
+      ? { medal: "🥇", classes: "bg-amber-100 border-amber-300 text-amber-900" }
+      : myCompetitionRank === 2
+      ? { medal: "🥈", classes: "bg-slate-200 border-slate-300 text-slate-800" }
+      : myCompetitionRank === 3
+      ? { medal: "🥉", classes: "bg-orange-100 border-orange-300 text-orange-800" }
+      : myCompetitionRank > 3
+      ? { medal: `#${myCompetitionRank}`, classes: "bg-blue-50 border-blue-200 text-blue-800" }
+      : { medal: "🏆", classes: "bg-gray-50 border-gray-200 text-gray-500" };
+
+  // Briefly flash the bar whenever the marshal's own rank changes, so a climb/drop in the
+  // live standings is noticeable even if they're not staring at it when the poll lands.
+  useEffect(() => {
+    if (!competitionModeEnabled) return;
+    const prev = prevCompetitionRankRef.current;
+    prevCompetitionRankRef.current = myCompetitionRank;
+    if (prev !== null && prev !== myCompetitionRank && myCompetitionRank > 0) {
+      setCompetitionPulse(true);
+      const timeout = setTimeout(() => setCompetitionPulse(false), 900);
+      return () => clearTimeout(timeout);
+    }
+  }, [myCompetitionRank, competitionModeEnabled]);
 
   const toggleGear = (code) => {
     setSelectedGearCodes((prev) => {
@@ -752,9 +783,11 @@ const ControleCoureurs = () => {
               <button
                 type="button"
                 onClick={() => setShowCompetitionDrawer(true)}
-                className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-md bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold hover:bg-amber-100 active:scale-[0.98] transition-transform"
+                className={`w-full flex items-center justify-center gap-1.5 py-1.5 rounded-md border text-xs font-semibold transition-all duration-300 active:scale-[0.98] ${
+                  competitionTier.classes
+                } ${competitionPulse ? "ring-2 ring-offset-1 ring-amber-400 scale-[1.02]" : ""}`}
               >
-                🏆{" "}
+                {competitionTier.medal}{" "}
                 {myCompetitionRank > 0
                   ? t("competition.badgeRanked", { rank: myCompetitionRank, count: myCompetitionCount })
                   : t("competition.badgeUnranked")}
