@@ -291,16 +291,30 @@ const ControleCoureurs = () => {
   // Mode compétition (super-admin, par course) : classement en temps réel du nombre de
   // contrôles saisis par commissaire sur la course en cours, dérivé de dossardsControles
   // (déjà rafraîchi toutes les 3 s), sans appel réseau supplémentaire.
+  // Même règle de comptage que les statistiques du panel admin : pour un dossard recontrôlé
+  // plusieurs fois, seul le premier contrôle compte, puis chaque contrôle suivant dont le
+  // résultat diffère du précédent — deux contrôles identiques d'affilée ne comptent qu'une fois.
   const competitionModeEnabled = !!selectedRace?.competition_mode;
   const competitionLeaderboard = competitionModeEnabled
-    ? Object.entries(
-        dossardsControles.reduce((acc, c) => {
-          acc[c.marshal_id] = (acc[c.marshal_id] || 0) + 1;
-          return acc;
-        }, {})
-      )
-        .map(([marshalId, count]) => ({ marshalId, count, name: marshalNames[marshalId] || "?" }))
-        .sort((a, b) => b.count - a.count)
+    ? (() => {
+        const byDossard = new Map();
+        for (const c of dossardsControles) {
+          if (!byDossard.has(c.dossard)) byDossard.set(c.dossard, []);
+          byDossard.get(c.dossard).push(c);
+        }
+        const counts = {};
+        for (const arr0 of byDossard.values()) {
+          const arr = [...arr0].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+          arr.forEach((c, i) => {
+            if (i === 0 || c.resultat !== arr[i - 1].resultat) {
+              counts[c.marshal_id] = (counts[c.marshal_id] || 0) + 1;
+            }
+          });
+        }
+        return Object.entries(counts)
+          .map(([marshalId, count]) => ({ marshalId, count, name: marshalNames[marshalId] || "?" }))
+          .sort((a, b) => b.count - a.count);
+      })()
     : [];
   const myCompetitionRank = competitionLeaderboard.findIndex((e) => e.marshalId === eventInfo.marshal_id) + 1;
   const myCompetitionCount = competitionLeaderboard.find((e) => e.marshalId === eventInfo.marshal_id)?.count ?? 0;
