@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { supabase } from "./supabaseClient";
-import { MapContainer, TileLayer, CircleMarker, useMapEvents } from "react-leaflet";
+import { MapContainer, TileLayer, CircleMarker, Polyline, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 
 async function sha256Hex(s) {
@@ -1008,15 +1008,38 @@ function LocationClickHandler({ onPick }) {
 // coordinates yet, so the admin isn't dropped on an unrelated part of the world map.
 const DEFAULT_MAP_CENTER = [45.92, 6.87];
 
+// A raw GPX can carry many thousands of trackpoints — more than a Leaflet polyline or a
+// jsonb column needs for a purely visual reference line. Downsample evenly rather than
+// truncating, so the whole route shape is preserved instead of being cut off partway.
+const MAX_GPX_POINTS = 1500;
+
+function parseGpxTrack(xmlText) {
+  const doc = new DOMParser().parseFromString(xmlText, "application/xml");
+  if (doc.querySelector("parsererror")) return [];
+  let points = [...doc.querySelectorAll("trkpt")];
+  if (points.length === 0) points = [...doc.querySelectorAll("rtept")];
+  const coords = points
+    .map((pt) => [parseFloat(pt.getAttribute("lat")), parseFloat(pt.getAttribute("lon"))])
+    .filter(([lat, lon]) => Number.isFinite(lat) && Number.isFinite(lon));
+  if (coords.length <= MAX_GPX_POINTS) return coords;
+  const stride = coords.length / MAX_GPX_POINTS;
+  const sampled = [];
+  for (let i = 0; i < MAX_GPX_POINTS; i++) sampled.push(coords[Math.floor(i * stride)]);
+  sampled.push(coords[coords.length - 1]);
+  return sampled;
+}
+
 // Placing a point is click-to-set rather than drag-a-pin: CircleMarker (already used
 // elsewhere in the app) has no drag support and sidesteps Leaflet's default marker icon
-// assets breaking under bundlers — clicking again just moves the point.
-function LocationPickerMap({ mapKey, lat, lng, onPick }) {
-  const center = lat != null && lng != null ? [lat, lng] : DEFAULT_MAP_CENTER;
+// assets breaking under bundlers — clicking again just moves the point. `track`, when
+// present, draws the race's GPX route underneath as a placement guide.
+function LocationPickerMap({ mapKey, lat, lng, onPick, track }) {
+  const center = lat != null && lng != null ? [lat, lng] : track?.length ? track[Math.floor(track.length / 2)] : DEFAULT_MAP_CENTER;
   return (
     <div className="border rounded overflow-hidden" style={{ height: 220 }}>
-      <MapContainer key={mapKey} center={center} zoom={lat != null ? 15 : 11} style={{ height: "100%", width: "100%" }}>
+      <MapContainer key={mapKey} center={center} zoom={lat != null ? 15 : track?.length ? 13 : 11} style={{ height: "100%", width: "100%" }}>
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors" />
+        {track?.length > 0 && <Polyline positions={track} pathOptions={{ color: "#2563eb", weight: 3, opacity: 0.7 }} />}
         <LocationClickHandler onPick={onPick} />
         {lat != null && lng != null && (
           <CircleMarker center={[lat, lng]} radius={9} pathOptions={{ color: "#ea580c", fillColor: "#ea580c", fillOpacity: 0.85 }} />
@@ -1027,6 +1050,8 @@ function LocationPickerMap({ mapKey, lat, lng, onPick }) {
 }
 
 function LocationsTab({ t, locations, races, events, onRefresh, actor }) {
+  const [selectedEventId, setSelectedEventId] = useState("");
+
   const [geoRadius, setGeoRadius] = useState("");
   const [geoRadiusStatus, setGeoRadiusStatus] = useState(null); // null | 'saving' | 'saved' | 'error'
 
@@ -1037,9 +1062,21 @@ function LocationsTab({ t, locations, races, events, onRefresh, actor }) {
   const [error, setError] = useState("");
 
   const [expandedId, setExpandedId] = useState(null);
-  const [assignEventFilter, setAssignEventFilter] = useState("");
   const [assignedRaceIds, setAssignedRaceIds] = useState(null);
   const [loadingAssignments, setLoadingAssignments] = useState(false);
+
+  // Every race_location row, fetched once — used to work out which checkpoints belong to
+  // the selected event (or are still unassigned anywhere) without a query per keystroke.
+  const [allAssignments, setAllAssignments] = useState([]);
+
+  const [previewRaceId, setPreviewRaceId] = useState("");
+  const [previewTrack, setPreviewTrack] = useState(null);
+  const [gpxStatus, setGpxStatus] = useState(null); // null | 'parsing' | 'saving' | 'error'
+
+  const fetchAllAssignments = async () => {
+    const { data } = await supabase.from("race_locations").select("race_id, location_id");
+    setAllAssignments(data || []);
+  };
 
   useEffect(() => {
     const loadRadius = async () => {
@@ -1047,7 +1084,19 @@ function LocationsTab({ t, locations, races, events, onRefresh, actor }) {
       if (data) setGeoRadius(String(data.geo_radius_m));
     };
     loadRadius();
+    fetchAllAssignments();
   }, []);
+
+  // Reset event-scoped UI state whenever the event changes so nothing from the previous
+  // event (an expanded row, a GPX preview) lingers into the new context.
+  useEffect(() => {
+    setExpandedId(null);
+    setPreviewRaceId("");
+    setPreviewTrack(null);
+    setGpxStatus(null);
+    setAdding(false);
+    setEditingId(null);
+  }, [selectedEventId]);
 
   const saveGeoRadius = async () => {
     const value = parseInt(geoRadius, 10);
@@ -1062,10 +1111,7 @@ function LocationsTab({ t, locations, races, events, onRefresh, actor }) {
     setTimeout(() => setGeoRadiusStatus(null), 2500);
   };
 
-  const toggleExpand = (id) => {
-    setExpandedId(prev => (prev === id ? null : id));
-    setAssignEventFilter("");
-  };
+  const toggleExpand = (id) => setExpandedId(prev => (prev === id ? null : id));
 
   useEffect(() => {
     if (!expandedId) { setAssignedRaceIds(null); return; }
@@ -1078,9 +1124,25 @@ function LocationsTab({ t, locations, races, events, onRefresh, actor }) {
     load();
   }, [expandedId]);
 
-  // A race with no event_id (orphaned data) can't match any event filter, but must not
-  // crash the filter itself — .toString() on a null event_id previously threw here.
-  const filteredRaces = assignEventFilter ? races.filter(r => r.event_id != null && r.event_id.toString() === assignEventFilter) : races;
+  // A race with no event_id (orphaned data) can't belong to any event filter, but must
+  // not crash the filter itself — .toString() on a null event_id previously threw here.
+  const eventRaces = selectedEventId ? races.filter(r => r.event_id != null && r.event_id.toString() === selectedEventId) : [];
+  const eventRaceIdSet = new Set(eventRaces.map(r => r.id));
+
+  const assignedRaceIdsByLocation = new Map();
+  for (const a of allAssignments) {
+    if (!assignedRaceIdsByLocation.has(a.location_id)) assignedRaceIdsByLocation.set(a.location_id, new Set());
+    assignedRaceIdsByLocation.get(a.location_id).add(a.race_id);
+  }
+  // A checkpoint shows up for this event if it's already assigned to one of its races, or
+  // if it isn't assigned to any race anywhere yet — that's the "old/default" fallback set
+  // (today, the original 3 generic seed checkpoints) an event with nothing configured
+  // starts from, and it's also how a checkpoint just created for this event stays visible.
+  const visibleLocations = locations.filter(loc => {
+    const assigned = assignedRaceIdsByLocation.get(loc.id);
+    if (!assigned || assigned.size === 0) return true;
+    return [...assigned].some(raceId => eventRaceIdSet.has(raceId));
+  });
 
   const toggleRace = async (locationId, raceId) => {
     if (!assignedRaceIds) return;
@@ -1095,23 +1157,64 @@ function LocationsTab({ t, locations, races, events, onRefresh, actor }) {
       setAssignedRaceIds(prev => new Set([...prev, raceId]));
       logActivity({ action: "assignment.location_added", entityType: "assignment", description: `Point de contrôle assigné à "${race?.name}" : ${loc?.name}`, actor });
     }
+    fetchAllAssignments();
   };
 
   const selectAllRaces = async (locationId) => {
     if (!assignedRaceIds) return;
-    const toInsert = filteredRaces.filter(r => !assignedRaceIds.has(r.id)).map(r => ({ race_id: r.id, location_id: locationId }));
+    const toInsert = eventRaces.filter(r => !assignedRaceIds.has(r.id)).map(r => ({ race_id: r.id, location_id: locationId }));
     if (toInsert.length > 0) await supabase.from("race_locations").insert(toInsert);
-    setAssignedRaceIds(prev => new Set([...prev, ...filteredRaces.map(r => r.id)]));
+    setAssignedRaceIds(prev => new Set([...prev, ...eventRaces.map(r => r.id)]));
     const loc = locations.find(l => l.id === locationId);
-    logActivity({ action: "assignment.all_races_added", entityType: "assignment", description: `Point de contrôle "${loc?.name}" assigné à toutes les courses filtrées`, actor });
+    logActivity({ action: "assignment.all_races_added", entityType: "assignment", description: `Point de contrôle "${loc?.name}" assigné à toutes les courses de l'évènement`, actor });
+    fetchAllAssignments();
   };
 
   const unselectAllRaces = async (locationId) => {
-    const ids = filteredRaces.map(r => r.id);
+    const ids = eventRaces.map(r => r.id);
     if (ids.length > 0) await supabase.from("race_locations").delete().eq("location_id", locationId).in("race_id", ids);
     setAssignedRaceIds(prev => { const s = new Set(prev); ids.forEach(id => s.delete(id)); return s; });
     const loc = locations.find(l => l.id === locationId);
-    logActivity({ action: "assignment.all_races_removed", entityType: "assignment", description: `Point de contrôle "${loc?.name}" retiré de toutes les courses filtrées`, actor });
+    logActivity({ action: "assignment.all_races_removed", entityType: "assignment", description: `Point de contrôle "${loc?.name}" retiré de toutes les courses de l'évènement`, actor });
+    fetchAllAssignments();
+  };
+
+  const handlePreviewRaceChange = async (raceId) => {
+    setPreviewRaceId(raceId);
+    setPreviewTrack(null);
+    setGpxStatus(null);
+    if (!raceId) return;
+    const { data } = await supabase.from("races").select("gpx_track").eq("id", raceId).single();
+    if (data?.gpx_track) setPreviewTrack(data.gpx_track);
+  };
+
+  const handleGpxFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !previewRaceId) return;
+    setGpxStatus("parsing");
+    try {
+      const text = await file.text();
+      const points = parseGpxTrack(text);
+      if (points.length === 0) { setGpxStatus("error"); return; }
+      setGpxStatus("saving");
+      const { error: err } = await supabase.from("races").update({ gpx_track: points }).eq("id", previewRaceId);
+      if (err) { setGpxStatus("error"); return; }
+      setPreviewTrack(points);
+      setGpxStatus(null);
+      const race = races.find(r => r.id.toString() === previewRaceId);
+      logActivity({ action: "race.gpx_uploaded", entityType: "race", entityId: parseInt(previewRaceId, 10), description: `Trace GPX importée pour "${race?.name}" (${points.length} points)`, actor });
+    } catch {
+      setGpxStatus("error");
+    }
+  };
+
+  const clearGpxTrack = async () => {
+    if (!previewRaceId) return;
+    await supabase.from("races").update({ gpx_track: null }).eq("id", previewRaceId);
+    setPreviewTrack(null);
+    const race = races.find(r => r.id.toString() === previewRaceId);
+    logActivity({ action: "race.gpx_cleared", entityType: "race", entityId: parseInt(previewRaceId, 10), description: `Trace GPX supprimée pour "${race?.name}"`, actor });
   };
 
   const startEdit = (loc) => {
@@ -1164,134 +1267,169 @@ function LocationsTab({ t, locations, races, events, onRefresh, actor }) {
     <div>
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-lg font-semibold">{t("superAdmin.tabLocations")}</h2>
-        <button
-          onClick={() => { setAdding(true); setNewForm({ name: "", latitude: null, longitude: null }); setError(""); }}
-          className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
-        >
-          + {t("superAdmin.addLocation")}
-        </button>
       </div>
 
-      <div className="border rounded p-3 mb-4 bg-gray-50 flex items-center gap-2 flex-wrap">
-        <label className="text-sm font-medium">{t("superAdmin.geoRadiusLabel")}</label>
-        <input
-          type="number"
-          min="1"
-          className="border rounded p-1 w-24 text-sm"
-          value={geoRadius}
-          onChange={(e) => setGeoRadius(e.target.value)}
-        />
-        <button onClick={saveGeoRadius} disabled={geoRadiusStatus === "saving"} className="px-3 py-1 bg-blue-600 text-white rounded text-xs disabled:opacity-50">
-          {t("superAdmin.save")}
-        </button>
-        {geoRadiusStatus === "saved" && <span className="text-xs text-green-700">{t("superAdmin.geoRadiusSaved")}</span>}
-        {geoRadiusStatus === "error" && <span className="text-xs text-red-600">{t("superAdmin.saveError")}</span>}
+      <div className="border rounded p-3 mb-4 bg-gray-50">
+        <label className="text-sm font-medium mr-2">{t("superAdmin.chooseEventFirst")}</label>
+        <select className="border rounded p-1 text-sm" value={selectedEventId} onChange={(e) => setSelectedEventId(e.target.value)}>
+          <option value="">-- {t("superAdmin.chooseEventFirst")} --</option>
+          {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
+        </select>
       </div>
 
-      {error && <p className="text-xs text-red-600 mb-3">{error}</p>}
-
-      {adding && (
-        <div className="border rounded overflow-hidden mb-3 bg-blue-50">
-          <div className="p-3 space-y-2">
-            <input
-              className="border rounded p-2 w-full text-sm"
-              placeholder={t("superAdmin.locationName")}
-              value={newForm.name}
-              onChange={(e) => setNewForm(f => ({ ...f, name: e.target.value }))}
-              autoFocus
-            />
-            <LocationPickerMap mapKey="new" lat={newForm.latitude} lng={newForm.longitude} onPick={(lat, lng) => setNewForm(f => ({ ...f, latitude: lat, longitude: lng }))} />
-            <p className="text-xs text-gray-500">
-              {newForm.latitude != null ? `${newForm.latitude.toFixed(6)}, ${newForm.longitude.toFixed(6)}` : t("superAdmin.locationCoordsHint")}
-            </p>
-            <div className="flex gap-1">
-              <button onClick={addLocation} className="px-3 py-1 bg-green-600 text-white rounded text-xs">{t("superAdmin.save")}</button>
-              <button onClick={() => setAdding(false)} className="px-3 py-1 border rounded text-xs">{t("superAdmin.cancel")}</button>
-            </div>
+      {!selectedEventId ? (
+        <p className="text-center p-6 text-gray-400 text-sm">{t("superAdmin.selectEventPrompt")}</p>
+      ) : (
+        <>
+          <div className="flex justify-end mb-4">
+            <button
+              onClick={() => { setAdding(true); setNewForm({ name: "", latitude: null, longitude: null }); setError(""); }}
+              className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+            >
+              + {t("superAdmin.addLocation")}
+            </button>
           </div>
-        </div>
-      )}
 
-      <div className="space-y-2">
-        {locations.map(loc => (
-          <div key={loc.id} className="border rounded overflow-hidden">
-            <div className="flex items-center gap-2 p-3 bg-white">
-              <button onClick={() => toggleExpand(loc.id)} className="text-gray-400 hover:text-gray-600 w-5 text-center flex-shrink-0" aria-label="expand">
-                {expandedId === loc.id ? "▾" : "▸"}
-              </button>
-              {editingId === loc.id ? (
-                <div className="flex-1 space-y-2">
-                  <input className="border rounded p-1 w-full text-sm" value={editForm.name} onChange={(e) => setEditForm(f => ({ ...f, name: e.target.value }))} autoFocus />
-                  <LocationPickerMap mapKey={loc.id} lat={editForm.latitude} lng={editForm.longitude} onPick={(lat, lng) => setEditForm(f => ({ ...f, latitude: lat, longitude: lng }))} />
-                  <p className="text-xs text-gray-500">
-                    {editForm.latitude != null ? `${editForm.latitude.toFixed(6)}, ${editForm.longitude.toFixed(6)}` : t("superAdmin.locationCoordsHint")}
-                  </p>
-                  <div className="flex gap-1">
-                    <button onClick={() => saveLocation(loc.id)} className="px-3 py-1 bg-green-600 text-white rounded text-xs">{t("superAdmin.save")}</button>
-                    <button onClick={() => setEditingId(null)} className="px-3 py-1 border rounded text-xs">{t("superAdmin.cancel")}</button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="flex-1">
-                    <span className={`font-medium ${!loc.isActive ? "text-gray-400 line-through" : ""}`}>{loc.name}</span>
-                    <div className="text-xs text-gray-500">
-                      {loc.latitude != null ? `${loc.latitude.toFixed(5)}, ${loc.longitude.toFixed(5)}` : t("superAdmin.locationNoCoords")}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => toggleActive(loc)}
-                    className={`px-2 py-1 text-xs rounded border flex-shrink-0 ${loc.isActive ? "text-green-700 border-green-300 bg-green-50" : "text-gray-400 border-gray-200"}`}
-                  >
-                    {loc.isActive ? t("superAdmin.active") : t("superAdmin.inactive")}
+          <div className="border rounded p-3 mb-4 bg-gray-50 flex items-center gap-2 flex-wrap">
+            <label className="text-sm font-medium">{t("superAdmin.geoRadiusLabel")}</label>
+            <input
+              type="number"
+              min="1"
+              className="border rounded p-1 w-24 text-sm"
+              value={geoRadius}
+              onChange={(e) => setGeoRadius(e.target.value)}
+            />
+            <button onClick={saveGeoRadius} disabled={geoRadiusStatus === "saving"} className="px-3 py-1 bg-blue-600 text-white rounded text-xs disabled:opacity-50">
+              {t("superAdmin.save")}
+            </button>
+            {geoRadiusStatus === "saved" && <span className="text-xs text-green-700">{t("superAdmin.geoRadiusSaved")}</span>}
+            {geoRadiusStatus === "error" && <span className="text-xs text-red-600">{t("superAdmin.saveError")}</span>}
+          </div>
+
+          <div className="border rounded p-3 mb-4 bg-gray-50 flex items-center gap-2 flex-wrap">
+            <label className="text-sm font-medium">{t("superAdmin.gpxRaceLabel")}</label>
+            <select className="border rounded p-1 text-xs" value={previewRaceId} onChange={(e) => handlePreviewRaceChange(e.target.value)}>
+              <option value="">-- {t("superAdmin.gpxChooseRace")} --</option>
+              {eventRaces.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+            {previewRaceId && (
+              <>
+                <label className="px-2 py-1 border rounded text-xs cursor-pointer hover:bg-gray-100">
+                  {t("superAdmin.gpxUpload")}
+                  <input type="file" accept=".gpx" className="hidden" onChange={handleGpxFile} />
+                </label>
+                {previewTrack && (
+                  <button onClick={clearGpxTrack} className="px-2 py-1 border rounded text-xs text-red-600 hover:bg-red-50">
+                    {t("superAdmin.gpxClear")}
                   </button>
-                  <button onClick={() => startEdit(loc)} className="px-2 py-1 border rounded text-xs hover:bg-gray-50 flex-shrink-0">{t("superAdmin.edit")}</button>
-                  <button onClick={() => deleteLocation(loc)} className="px-2 py-1 border rounded text-xs text-red-600 hover:bg-red-50 flex-shrink-0">{t("superAdmin.delete")}</button>
-                </>
-              )}
-            </div>
+                )}
+              </>
+            )}
+            {gpxStatus === "parsing" && <span className="text-xs text-gray-500">{t("superAdmin.gpxParsing")}</span>}
+            {gpxStatus === "error" && <span className="text-xs text-red-600">{t("superAdmin.gpxError")}</span>}
+            {previewTrack && <span className="text-xs text-green-700">{t("superAdmin.gpxPointCount", { count: previewTrack.length })}</span>}
+          </div>
 
-            {expandedId === loc.id && (
-              <div className="border-t bg-gray-50 p-3">
-                <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
-                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                    {t("superAdmin.assignedRaces")}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <select className="border rounded p-1 text-xs" value={assignEventFilter} onChange={(e) => setAssignEventFilter(e.target.value)}>
-                      <option value="">{t("superAdmin.allEvents")}</option>
-                      {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
-                    </select>
-                    {!loadingAssignments && filteredRaces.length > 0 && (
+          {error && <p className="text-xs text-red-600 mb-3">{error}</p>}
+
+          {adding && (
+            <div className="border rounded overflow-hidden mb-3 bg-blue-50">
+              <div className="p-3 space-y-2">
+                <input
+                  className="border rounded p-2 w-full text-sm"
+                  placeholder={t("superAdmin.locationName")}
+                  value={newForm.name}
+                  onChange={(e) => setNewForm(f => ({ ...f, name: e.target.value }))}
+                  autoFocus
+                />
+                <LocationPickerMap mapKey="new" lat={newForm.latitude} lng={newForm.longitude} track={previewTrack} onPick={(lat, lng) => setNewForm(f => ({ ...f, latitude: lat, longitude: lng }))} />
+                <p className="text-xs text-gray-500">
+                  {newForm.latitude != null ? `${newForm.latitude.toFixed(6)}, ${newForm.longitude.toFixed(6)}` : t("superAdmin.locationCoordsHint")}
+                </p>
+                <div className="flex gap-1">
+                  <button onClick={addLocation} className="px-3 py-1 bg-green-600 text-white rounded text-xs">{t("superAdmin.save")}</button>
+                  <button onClick={() => setAdding(false)} className="px-3 py-1 border rounded text-xs">{t("superAdmin.cancel")}</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            {visibleLocations.map(loc => (
+              <div key={loc.id} className="border rounded overflow-hidden">
+                <div className="flex items-center gap-2 p-3 bg-white">
+                  <button onClick={() => toggleExpand(loc.id)} className="text-gray-400 hover:text-gray-600 w-5 text-center flex-shrink-0" aria-label="expand">
+                    {expandedId === loc.id ? "▾" : "▸"}
+                  </button>
+                  {editingId === loc.id ? (
+                    <div className="flex-1 space-y-2">
+                      <input className="border rounded p-1 w-full text-sm" value={editForm.name} onChange={(e) => setEditForm(f => ({ ...f, name: e.target.value }))} autoFocus />
+                      <LocationPickerMap mapKey={loc.id} lat={editForm.latitude} lng={editForm.longitude} track={previewTrack} onPick={(lat, lng) => setEditForm(f => ({ ...f, latitude: lat, longitude: lng }))} />
+                      <p className="text-xs text-gray-500">
+                        {editForm.latitude != null ? `${editForm.latitude.toFixed(6)}, ${editForm.longitude.toFixed(6)}` : t("superAdmin.locationCoordsHint")}
+                      </p>
                       <div className="flex gap-1">
-                        <button onClick={() => selectAllRaces(loc.id)} className="px-2 py-0.5 text-xs border rounded hover:bg-gray-100">{t("superAdmin.selectAll")}</button>
-                        <button onClick={() => unselectAllRaces(loc.id)} className="px-2 py-0.5 text-xs border rounded hover:bg-gray-100">{t("superAdmin.unselectAll")}</button>
+                        <button onClick={() => saveLocation(loc.id)} className="px-3 py-1 bg-green-600 text-white rounded text-xs">{t("superAdmin.save")}</button>
+                        <button onClick={() => setEditingId(null)} className="px-3 py-1 border rounded text-xs">{t("superAdmin.cancel")}</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex-1">
+                        <span className={`font-medium ${!loc.isActive ? "text-gray-400 line-through" : ""}`}>{loc.name}</span>
+                        <div className="text-xs text-gray-500">
+                          {loc.latitude != null ? `${loc.latitude.toFixed(5)}, ${loc.longitude.toFixed(5)}` : t("superAdmin.locationNoCoords")}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => toggleActive(loc)}
+                        className={`px-2 py-1 text-xs rounded border flex-shrink-0 ${loc.isActive ? "text-green-700 border-green-300 bg-green-50" : "text-gray-400 border-gray-200"}`}
+                      >
+                        {loc.isActive ? t("superAdmin.active") : t("superAdmin.inactive")}
+                      </button>
+                      <button onClick={() => startEdit(loc)} className="px-2 py-1 border rounded text-xs hover:bg-gray-50 flex-shrink-0">{t("superAdmin.edit")}</button>
+                      <button onClick={() => deleteLocation(loc)} className="px-2 py-1 border rounded text-xs text-red-600 hover:bg-red-50 flex-shrink-0">{t("superAdmin.delete")}</button>
+                    </>
+                  )}
+                </div>
+
+                {expandedId === loc.id && (
+                  <div className="border-t bg-gray-50 p-3">
+                    <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
+                      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                        {t("superAdmin.assignedRaces")}
+                      </div>
+                      {!loadingAssignments && eventRaces.length > 0 && (
+                        <div className="flex gap-1">
+                          <button onClick={() => selectAllRaces(loc.id)} className="px-2 py-0.5 text-xs border rounded hover:bg-gray-100">{t("superAdmin.selectAll")}</button>
+                          <button onClick={() => unselectAllRaces(loc.id)} className="px-2 py-0.5 text-xs border rounded hover:bg-gray-100">{t("superAdmin.unselectAll")}</button>
+                        </div>
+                      )}
+                    </div>
+                    {loadingAssignments ? (
+                      <p className="text-xs text-gray-400">…</p>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-1">
+                        {eventRaces.length === 0 && <p className="text-xs text-gray-400 col-span-2">{t("superAdmin.noRaces")}</p>}
+                        {eventRaces.map(r => (
+                          <label key={r.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                            <input type="checkbox" checked={assignedRaceIds?.has(r.id) ?? false} onChange={() => toggleRace(loc.id, r.id)} />
+                            {r.name}
+                          </label>
+                        ))}
                       </div>
                     )}
                   </div>
-                </div>
-                {loadingAssignments ? (
-                  <p className="text-xs text-gray-400">…</p>
-                ) : (
-                  <div className="grid grid-cols-2 gap-1">
-                    {filteredRaces.length === 0 && <p className="text-xs text-gray-400 col-span-2">{t("superAdmin.noRaces")}</p>}
-                    {filteredRaces.map(r => (
-                      <label key={r.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                        <input type="checkbox" checked={assignedRaceIds?.has(r.id) ?? false} onChange={() => toggleRace(loc.id, r.id)} />
-                        {r.name}{!assignEventFilter && ` (${events.find(ev => ev.id === r.event_id)?.name || "?"})`}
-                      </label>
-                    ))}
-                  </div>
                 )}
               </div>
+            ))}
+
+            {visibleLocations.length === 0 && !adding && (
+              <p className="text-center p-4 text-gray-400 text-sm">{t("superAdmin.noLocations")}</p>
             )}
           </div>
-        ))}
-
-        {locations.length === 0 && !adding && (
-          <p className="text-center p-4 text-gray-400 text-sm">{t("superAdmin.noLocations")}</p>
-        )}
-      </div>
+        </>
+      )}
     </div>
   );
 }
