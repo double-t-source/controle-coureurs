@@ -2,6 +2,28 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { supabase } from "./supabaseClient";
 
+const EARTH_RADIUS_M = 6371000;
+function distanceMeters(lat1, lng1, lat2, lng2) {
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return EARTH_RADIUS_M * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+// Nearest-point matching stands in for real geofencing: each checkpoint is just a
+// lat/lng, and we pick whichever is closest to the marshal's captured position.
+function findNearestLocation(coords, locations) {
+  let best = null;
+  for (const location of locations) {
+    if (location.latitude == null || location.longitude == null) continue;
+    const distance = distanceMeters(coords.lat, coords.lng, location.latitude, location.longitude);
+    if (!best || distance < best.distance) best = { location, distance };
+  }
+  return best;
+}
+
 // Two-step UX: step 1 = select context (event / race / marshal), step 2 = enter checks.
 // The context is kept in state so the marshal doesn't re-select it between each bib entry.
 const ControleCoureurs = () => {
@@ -41,15 +63,19 @@ const ControleCoureurs = () => {
   const [marshalNames, setMarshalNames] = useState({});
   const dossardRef = useRef(null);
   const lastPrefilledBib = useRef(null);
-  const [locationList, setLocationList] = useState([]);
+  const [raceLocationList, setRaceLocationList] = useState([]);
   const [selectedLocation, setSelectedLocation] = useState("");
   const [showCompetitionDrawer, setShowCompetitionDrawer] = useState(false);
   const [competitionPulse, setCompetitionPulse] = useState(false);
   const prevCompetitionRankRef = useRef(null);
 
   // Geolocation
-  // "idle" | "requesting" | "granted" | "denied" | "unavailable"
+  // "idle" | "requesting" | "granted" | "matched" | "suggested" | "denied" | "unavailable"
   const [geoStatus, setGeoStatus] = useState("idle");
+  const [geoRadiusM, setGeoRadiusM] = useState(250);
+  const [capturedCoords, setCapturedCoords] = useState(null);
+  const [matchedLocation, setMatchedLocation] = useState(null); // { location, distance }
+  const [manualOverride, setManualOverride] = useState(false);
 
   // Initial fetch
   useEffect(() => {
@@ -57,14 +83,17 @@ const ControleCoureurs = () => {
       const { data } = await supabase.from("events").select("id, name, isLocked, geolocation_mode");
       if (data) setEventList(data);
     };
-    const fetchLocations = async () => {
-      const { data } = await supabase.from("locations").select("id, name").eq("isActive", true);
-      if (data) setLocationList(data);
+    const fetchGeoRadius = async () => {
+      const { data } = await supabase.from("app_settings").select("geo_radius_m").eq("id", 1).single();
+      if (data?.geo_radius_m) setGeoRadiusM(data.geo_radius_m);
     };
     fetchEvents();
-    fetchLocations();
+    fetchGeoRadius();
   }, []);
 
+  // Priming permission request when the event is picked, before the race (and its
+  // checkpoints) are known — the actual nearest-checkpoint match happens once the race
+  // is selected, see the race_id effect below.
   const requestGeo = () => {
     if (!navigator.geolocation) {
       setGeoStatus("unavailable");
@@ -82,11 +111,72 @@ const ControleCoureurs = () => {
   useEffect(() => {
     const mode = eventList.find((e) => e.id.toString() === eventInfo.event_id)?.geolocation_mode || "no";
     setGeoStatus("idle");
+    setCapturedCoords(null);
+    setMatchedLocation(null);
+    setManualOverride(false);
     if (mode !== "no" && eventInfo.event_id) {
       requestGeo();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventInfo.event_id]);
+
+  // Capture the marshal's position once per race selection (locked for the session) and
+  // match it against that race's checkpoints. A stale/no-longer-relevant match never
+  // lingers across races since raceLocationList/matchedLocation are reset first.
+  const relocate = (locations) => {
+    if (!navigator.geolocation) {
+      setGeoStatus("unavailable");
+      return;
+    }
+    setGeoStatus("requesting");
+    setManualOverride(false);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setCapturedCoords(coords);
+        const nearest = findNearestLocation(coords, locations);
+        setMatchedLocation(nearest);
+        if (!nearest) {
+          setGeoStatus("granted");
+        } else if (nearest.distance <= geoRadiusM) {
+          setSelectedLocation(String(nearest.location.id));
+          setGeoStatus("matched");
+        } else {
+          setGeoStatus("suggested");
+        }
+      },
+      () => setGeoStatus("denied"),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  // Load the checkpoints for the selected race and (re)run the auto-detection now that
+  // they're known — this is what actually resolves/locks a named location for the session.
+  useEffect(() => {
+    const fetchRaceLocations = async () => {
+      if (!eventInfo.race_id) {
+        setRaceLocationList([]);
+        return;
+      }
+      const { data } = await supabase
+        .from("race_locations")
+        .select("locations(id, name, latitude, longitude, isActive)")
+        .eq("race_id", eventInfo.race_id);
+      const locations = (data || []).map((r) => r.locations).filter((l) => l && l.isActive);
+      setRaceLocationList(locations);
+      setSelectedLocation("");
+      setCapturedCoords(null);
+      setMatchedLocation(null);
+      setManualOverride(false);
+
+      const mode = eventList.find((e) => e.id.toString() === eventInfo.event_id)?.geolocation_mode || "no";
+      if (mode !== "no" && (geoStatus === "granted" || geoStatus === "matched" || geoStatus === "suggested")) {
+        relocate(locations);
+      }
+    };
+    fetchRaceLocations();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventInfo.race_id]);
 
   // Charger les courses, commissaires et équipements après sélection d'évènement
   useEffect(() => {
@@ -166,7 +256,7 @@ const ControleCoureurs = () => {
       if (eventInfo.race_id) {
         const { data } = await supabase
           .from("controles")
-          .select("dossard, marshal_id, created_at, resultat, materiel_manquant")
+          .select("dossard, marshal_id, created_at, resultat, materiel_manquant, location_id")
           .eq("race_id", eventInfo.race_id);
         if (data) setDossardsControles(data);
       }
@@ -260,6 +350,14 @@ const ControleCoureurs = () => {
   const geoMode = selectedEvent?.geolocation_mode || "no";
   // Block the "Start" button entirely when geolocation is mandatory but denied — avoids silent data loss.
   const geoBlocked = geoMode === "mandatory" && (geoStatus === "denied" || geoStatus === "unavailable");
+  const locationsById = Object.fromEntries(raceLocationList.map((l) => [l.id, l.name]));
+  const showManualLocationSelect =
+    geoMode === "no" ||
+    geoStatus === "idle" ||
+    geoStatus === "requesting" ||
+    geoStatus === "denied" ||
+    geoStatus === "unavailable" ||
+    manualOverride;
   const raceHasPacers = selectedRace?.has_pacers ?? false;
   // Pacers get a "P" prefix so they're distinguishable from runners with the same number.
   const effectiveDossard = isPacer && form.dossard ? "P" + form.dossard : form.dossard;
@@ -409,20 +507,11 @@ const ControleCoureurs = () => {
     const isDuplicate = dossardsControles.map((dc) => dc.dossard).includes(effectiveDossard);
     if (isDuplicate && !window.confirm(t("dupConfirm"))) return;
 
-    // Capture geolocation if needed
-    let coords = null;
-    if (geoMode !== "no" && navigator.geolocation) {
-      coords = await new Promise((resolve) => {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-          () => resolve(null),
-          { enableHighAccuracy: true, timeout: 8000 }
-        );
-      });
-      if (geoMode === "mandatory" && !coords) {
-        alert(t("geo.mandatoryBlocked"));
-        return;
-      }
+    // Position is captured once per race session (see the race_id effect / relocate()),
+    // not re-queried on every submit — reuse whatever was locked in for this checkpoint.
+    if (geoMode === "mandatory" && !capturedCoords) {
+      alert(t("geo.mandatoryBlocked"));
+      return;
     }
 
     const gearCodes = [...selectedGearCodes];
@@ -435,8 +524,8 @@ const ControleCoureurs = () => {
       resultat: form.resultat,
       materiel_manquant: form.resultat === "ko" && gearCodes.length > 0 ? gearCodes.join(",") : null,
       commentaire: form.commentaire,
-      latitude: coords?.lat ?? null,
-      longitude: coords?.lng ?? null,
+      latitude: capturedCoords?.lat ?? null,
+      longitude: capturedCoords?.lng ?? null,
     };
 
     setSyncStatus("syncing");
@@ -450,7 +539,7 @@ const ControleCoureurs = () => {
     // Optimistically append to local list so the duplicate warning fires immediately on the next bib.
     setDossardsControles((prev) => [
       ...prev,
-      { dossard: effectiveDossard, marshal_id: eventInfo.marshal_id, created_at: new Date().toISOString(), resultat: form.resultat, materiel_manquant: data.materiel_manquant },
+      { dossard: effectiveDossard, marshal_id: eventInfo.marshal_id, created_at: new Date().toISOString(), resultat: form.resultat, materiel_manquant: data.materiel_manquant, location_id: data.location_id },
     ]);
     setSubmitted(true);
     setSyncStatus("success");
@@ -531,37 +620,101 @@ const ControleCoureurs = () => {
             ))}
           </select>
 
-          {!(geoMode !== "no" && geoStatus === "granted") && (
-            <select
-              name="location_id"
-              value={selectedLocation}
-              onChange={(e) => setSelectedLocation(e.target.value)}
-              className="w-full p-3 border rounded-md"
+          {geoMode !== "no" && !manualOverride && (
+            <div
+              className={`p-3 rounded border text-sm ${
+                geoStatus === "denied" || geoStatus === "unavailable"
+                  ? "bg-red-50 border-red-300 text-red-700"
+                  : geoStatus === "matched"
+                  ? "bg-green-50 border-green-300 text-green-700"
+                  : geoStatus === "suggested"
+                  ? "bg-orange-50 border-orange-300 text-orange-800"
+                  : "bg-blue-50 border-blue-200 text-blue-700"
+              }`}
             >
-              <option value="">-- {t("location")} --</option>
-              {locationList.map((loc) => (
-                <option key={loc.id} value={loc.id}>
-                  {loc.name}
-                </option>
-              ))}
-            </select>
-          )}
-
-          {geoMode !== "no" && (
-            <div className={`p-3 rounded border text-sm ${geoStatus === "denied" || geoStatus === "unavailable" ? "bg-red-50 border-red-300 text-red-700" : geoStatus === "granted" ? "bg-green-50 border-green-300 text-green-700" : "bg-blue-50 border-blue-200 text-blue-700"}`}>
               {geoStatus === "idle" && t("geo.permissionInfo")}
               {geoStatus === "requesting" && t("geo.requesting")}
               {geoStatus === "granted" && t("geo.granted")}
+              {geoStatus === "matched" && matchedLocation && (
+                <div className="flex items-center justify-between gap-2">
+                  <span>📍 {t("geo.matchedAt", { name: matchedLocation.location.name })}</span>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button type="button" onClick={() => relocate(raceLocationList)} className="text-xs underline">
+                      🔄
+                    </button>
+                    <button type="button" onClick={() => setManualOverride(true)} className="text-xs underline">
+                      {t("geo.wrongLocation")}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {geoStatus === "suggested" && matchedLocation && (
+                <div className="space-y-2">
+                  <p>
+                    📍 {t("geo.suggestedAt", { name: matchedLocation.location.name, distance: Math.round(matchedLocation.distance) })}
+                  </p>
+                  {selectedLocation === String(matchedLocation.location.id) ? (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-medium">✓ {t("geo.confirmed")}</span>
+                      <button type="button" onClick={() => relocate(raceLocationList)} className="text-xs underline">
+                        🔄 {t("geo.relocate")}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedLocation(String(matchedLocation.location.id))}
+                        className="px-3 py-1 bg-orange-600 text-white rounded text-xs"
+                      >
+                        {t("geo.confirmLocation")}
+                      </button>
+                      <button type="button" onClick={() => setManualOverride(true)} className="px-3 py-1 border rounded text-xs">
+                        {t("geo.chooseOther")}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
               {(geoStatus === "denied" || geoStatus === "unavailable") && (
                 <>
                   <p>{geoMode === "mandatory" ? t("geo.mandatoryBlocked") : t("geo.denied")}</p>
                   {geoStatus === "denied" && (
-                    <button onClick={requestGeo} className="mt-2 px-3 py-1 bg-blue-600 text-white rounded text-xs">
+                    <button onClick={() => relocate(raceLocationList)} className="mt-2 px-3 py-1 bg-blue-600 text-white rounded text-xs">
                       {t("geo.allowBtn")}
                     </button>
                   )}
                 </>
               )}
+            </div>
+          )}
+
+          {showManualLocationSelect && (
+            <div>
+              {manualOverride && geoMode !== "no" && (
+                <div className="flex justify-end mb-1">
+                  <button
+                    type="button"
+                    onClick={() => { setManualOverride(false); relocate(raceLocationList); }}
+                    className="text-xs text-blue-600 underline"
+                  >
+                    🔄 {t("geo.relocate")}
+                  </button>
+                </div>
+              )}
+              <select
+                name="location_id"
+                value={selectedLocation}
+                onChange={(e) => setSelectedLocation(e.target.value)}
+                className="w-full p-3 border rounded-md"
+              >
+                <option value="">-- {t("location")} --</option>
+                {raceLocationList.map((loc) => (
+                  <option key={loc.id} value={loc.id}>
+                    {loc.name}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
 
@@ -693,6 +846,7 @@ const ControleCoureurs = () => {
                     minute: "2-digit",
                   }),
                 })} — {marshalNames[duplicateInfo.marshal_id] || "?"}
+                {duplicateInfo.location_id && locationsById[duplicateInfo.location_id] && ` · ${locationsById[duplicateInfo.location_id]}`}
               </p>
             )}
             {isBibOutOfRange && <p className="text-sm text-red-600">{t("bibOutOfRange")}</p>}
@@ -856,6 +1010,7 @@ const ControleCoureurs = () => {
                             minute: "2-digit",
                           }),
                         })}
+                        {c.location_id && locationsById[c.location_id] && ` · ${locationsById[c.location_id]}`}
                       </span>
                     </li>
                   ))}

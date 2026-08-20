@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { supabase } from "./supabaseClient";
+import { MapContainer, TileLayer, CircleMarker, useMapEvents } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
 
 async function sha256Hex(s) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
@@ -993,6 +995,305 @@ function GearTab({ t, gear, onRefresh, actor }) {
   );
 }
 
+// ─── Locations Tab ─────────────────────────────────────────────────────────
+
+function LocationClickHandler({ onPick }) {
+  useMapEvents({
+    click(e) { onPick(e.latlng.lat, e.latlng.lng); },
+  });
+  return null;
+}
+
+// Chamonix/Courmayeur area — a sensible default center for a checkpoint that has no
+// coordinates yet, so the admin isn't dropped on an unrelated part of the world map.
+const DEFAULT_MAP_CENTER = [45.92, 6.87];
+
+// Placing a point is click-to-set rather than drag-a-pin: CircleMarker (already used
+// elsewhere in the app) has no drag support and sidesteps Leaflet's default marker icon
+// assets breaking under bundlers — clicking again just moves the point.
+function LocationPickerMap({ mapKey, lat, lng, onPick }) {
+  const center = lat != null && lng != null ? [lat, lng] : DEFAULT_MAP_CENTER;
+  return (
+    <div className="border rounded overflow-hidden" style={{ height: 220 }}>
+      <MapContainer key={mapKey} center={center} zoom={lat != null ? 15 : 11} style={{ height: "100%", width: "100%" }}>
+        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors" />
+        <LocationClickHandler onPick={onPick} />
+        {lat != null && lng != null && (
+          <CircleMarker center={[lat, lng]} radius={9} pathOptions={{ color: "#ea580c", fillColor: "#ea580c", fillOpacity: 0.85 }} />
+        )}
+      </MapContainer>
+    </div>
+  );
+}
+
+function LocationsTab({ t, locations, races, events, onRefresh, actor }) {
+  const [geoRadius, setGeoRadius] = useState("");
+  const [geoRadiusStatus, setGeoRadiusStatus] = useState(null); // null | 'saving' | 'saved' | 'error'
+
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({ name: "", latitude: null, longitude: null });
+  const [adding, setAdding] = useState(false);
+  const [newForm, setNewForm] = useState({ name: "", latitude: null, longitude: null });
+  const [error, setError] = useState("");
+
+  const [expandedId, setExpandedId] = useState(null);
+  const [assignEventFilter, setAssignEventFilter] = useState("");
+  const [assignedRaceIds, setAssignedRaceIds] = useState(null);
+  const [loadingAssignments, setLoadingAssignments] = useState(false);
+
+  useEffect(() => {
+    const loadRadius = async () => {
+      const { data } = await supabase.from("app_settings").select("geo_radius_m").eq("id", 1).single();
+      if (data) setGeoRadius(String(data.geo_radius_m));
+    };
+    loadRadius();
+  }, []);
+
+  const saveGeoRadius = async () => {
+    const value = parseInt(geoRadius, 10);
+    if (Number.isNaN(value) || value <= 0) { setGeoRadiusStatus("error"); return; }
+    setGeoRadiusStatus("saving");
+    const { error: err } = await supabase
+      .from("app_settings")
+      .update({ geo_radius_m: value, updated_at: new Date().toISOString() })
+      .eq("id", 1);
+    setGeoRadiusStatus(err ? "error" : "saved");
+    if (!err) logActivity({ action: "settings.geo_radius_updated", entityType: "app_settings", description: `Rayon de détection auto réglé à ${value} m`, actor });
+    setTimeout(() => setGeoRadiusStatus(null), 2500);
+  };
+
+  const toggleExpand = (id) => {
+    setExpandedId(prev => (prev === id ? null : id));
+    setAssignEventFilter("");
+  };
+
+  useEffect(() => {
+    if (!expandedId) { setAssignedRaceIds(null); return; }
+    const load = async () => {
+      setLoadingAssignments(true);
+      const { data } = await supabase.from("race_locations").select("race_id").eq("location_id", expandedId);
+      setAssignedRaceIds(new Set((data || []).map(r => r.race_id)));
+      setLoadingAssignments(false);
+    };
+    load();
+  }, [expandedId]);
+
+  const filteredRaces = assignEventFilter ? races.filter(r => r.event_id.toString() === assignEventFilter) : races;
+
+  const toggleRace = async (locationId, raceId) => {
+    if (!assignedRaceIds) return;
+    const loc = locations.find(l => l.id === locationId);
+    const race = races.find(r => r.id === raceId);
+    if (assignedRaceIds.has(raceId)) {
+      await supabase.from("race_locations").delete().eq("race_id", raceId).eq("location_id", locationId);
+      setAssignedRaceIds(prev => { const s = new Set(prev); s.delete(raceId); return s; });
+      logActivity({ action: "assignment.location_removed", entityType: "assignment", description: `Point de contrôle retiré de "${race?.name}" : ${loc?.name}`, actor });
+    } else {
+      await supabase.from("race_locations").insert({ race_id: raceId, location_id: locationId });
+      setAssignedRaceIds(prev => new Set([...prev, raceId]));
+      logActivity({ action: "assignment.location_added", entityType: "assignment", description: `Point de contrôle assigné à "${race?.name}" : ${loc?.name}`, actor });
+    }
+  };
+
+  const selectAllRaces = async (locationId) => {
+    if (!assignedRaceIds) return;
+    const toInsert = filteredRaces.filter(r => !assignedRaceIds.has(r.id)).map(r => ({ race_id: r.id, location_id: locationId }));
+    if (toInsert.length > 0) await supabase.from("race_locations").insert(toInsert);
+    setAssignedRaceIds(prev => new Set([...prev, ...filteredRaces.map(r => r.id)]));
+    const loc = locations.find(l => l.id === locationId);
+    logActivity({ action: "assignment.all_races_added", entityType: "assignment", description: `Point de contrôle "${loc?.name}" assigné à toutes les courses filtrées`, actor });
+  };
+
+  const unselectAllRaces = async (locationId) => {
+    const ids = filteredRaces.map(r => r.id);
+    if (ids.length > 0) await supabase.from("race_locations").delete().eq("location_id", locationId).in("race_id", ids);
+    setAssignedRaceIds(prev => { const s = new Set(prev); ids.forEach(id => s.delete(id)); return s; });
+    const loc = locations.find(l => l.id === locationId);
+    logActivity({ action: "assignment.all_races_removed", entityType: "assignment", description: `Point de contrôle "${loc?.name}" retiré de toutes les courses filtrées`, actor });
+  };
+
+  const startEdit = (loc) => {
+    setEditingId(loc.id);
+    setEditForm({ name: loc.name, latitude: loc.latitude, longitude: loc.longitude });
+    setError("");
+  };
+
+  const saveLocation = async (id) => {
+    if (!editForm.name.trim()) return;
+    const { error: err } = await supabase.from("locations").update({
+      name: editForm.name.trim(),
+      latitude: editForm.latitude,
+      longitude: editForm.longitude,
+    }).eq("id", id);
+    if (err) { setError(t("superAdmin.saveError")); return; }
+    setEditingId(null);
+    logActivity({ action: "location.updated", entityType: "location", entityId: id, description: `Point de contrôle modifié : "${editForm.name.trim()}"`, actor });
+    onRefresh();
+  };
+
+  const addLocation = async () => {
+    const name = newForm.name.trim();
+    if (!name) return;
+    const { data: inserted, error: err } = await supabase.from("locations").insert({
+      name, latitude: newForm.latitude, longitude: newForm.longitude, isActive: true,
+    }).select("id").single();
+    if (err) { setError(t("superAdmin.saveError")); return; }
+    setAdding(false);
+    setNewForm({ name: "", latitude: null, longitude: null });
+    logActivity({ action: "location.created", entityType: "location", entityId: inserted?.id, description: `Point de contrôle créé : "${name}"`, actor });
+    onRefresh();
+  };
+
+  const toggleActive = async (loc) => {
+    await supabase.from("locations").update({ isActive: !loc.isActive }).eq("id", loc.id);
+    logActivity({ action: "location.toggled", entityType: "location", entityId: loc.id, description: `Point de contrôle ${loc.isActive ? "désactivé" : "activé"} : "${loc.name}"`, actor });
+    onRefresh();
+  };
+
+  const deleteLocation = async (loc) => {
+    if (!window.confirm(t("superAdmin.deleteLocationConfirm", { name: loc.name }))) return;
+    const { error: err } = await supabase.from("locations").delete().eq("id", loc.id);
+    if (err) { setError(t("superAdmin.saveError")); return; }
+    logActivity({ action: "location.deleted", entityType: "location", entityId: loc.id, description: `Point de contrôle supprimé : "${loc.name}"`, actor });
+    onRefresh();
+  };
+
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-lg font-semibold">{t("superAdmin.tabLocations")}</h2>
+        <button
+          onClick={() => { setAdding(true); setNewForm({ name: "", latitude: null, longitude: null }); setError(""); }}
+          className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+        >
+          + {t("superAdmin.addLocation")}
+        </button>
+      </div>
+
+      <div className="border rounded p-3 mb-4 bg-gray-50 flex items-center gap-2 flex-wrap">
+        <label className="text-sm font-medium">{t("superAdmin.geoRadiusLabel")}</label>
+        <input
+          type="number"
+          min="1"
+          className="border rounded p-1 w-24 text-sm"
+          value={geoRadius}
+          onChange={(e) => setGeoRadius(e.target.value)}
+        />
+        <button onClick={saveGeoRadius} disabled={geoRadiusStatus === "saving"} className="px-3 py-1 bg-blue-600 text-white rounded text-xs disabled:opacity-50">
+          {t("superAdmin.save")}
+        </button>
+        {geoRadiusStatus === "saved" && <span className="text-xs text-green-700">{t("superAdmin.geoRadiusSaved")}</span>}
+        {geoRadiusStatus === "error" && <span className="text-xs text-red-600">{t("superAdmin.saveError")}</span>}
+      </div>
+
+      {error && <p className="text-xs text-red-600 mb-3">{error}</p>}
+
+      {adding && (
+        <div className="border rounded overflow-hidden mb-3 bg-blue-50">
+          <div className="p-3 space-y-2">
+            <input
+              className="border rounded p-2 w-full text-sm"
+              placeholder={t("superAdmin.locationName")}
+              value={newForm.name}
+              onChange={(e) => setNewForm(f => ({ ...f, name: e.target.value }))}
+              autoFocus
+            />
+            <LocationPickerMap mapKey="new" lat={newForm.latitude} lng={newForm.longitude} onPick={(lat, lng) => setNewForm(f => ({ ...f, latitude: lat, longitude: lng }))} />
+            <p className="text-xs text-gray-500">
+              {newForm.latitude != null ? `${newForm.latitude.toFixed(6)}, ${newForm.longitude.toFixed(6)}` : t("superAdmin.locationCoordsHint")}
+            </p>
+            <div className="flex gap-1">
+              <button onClick={addLocation} className="px-3 py-1 bg-green-600 text-white rounded text-xs">{t("superAdmin.save")}</button>
+              <button onClick={() => setAdding(false)} className="px-3 py-1 border rounded text-xs">{t("superAdmin.cancel")}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {locations.map(loc => (
+          <div key={loc.id} className="border rounded overflow-hidden">
+            <div className="flex items-center gap-2 p-3 bg-white">
+              <button onClick={() => toggleExpand(loc.id)} className="text-gray-400 hover:text-gray-600 w-5 text-center flex-shrink-0" aria-label="expand">
+                {expandedId === loc.id ? "▾" : "▸"}
+              </button>
+              {editingId === loc.id ? (
+                <div className="flex-1 space-y-2">
+                  <input className="border rounded p-1 w-full text-sm" value={editForm.name} onChange={(e) => setEditForm(f => ({ ...f, name: e.target.value }))} autoFocus />
+                  <LocationPickerMap mapKey={loc.id} lat={editForm.latitude} lng={editForm.longitude} onPick={(lat, lng) => setEditForm(f => ({ ...f, latitude: lat, longitude: lng }))} />
+                  <p className="text-xs text-gray-500">
+                    {editForm.latitude != null ? `${editForm.latitude.toFixed(6)}, ${editForm.longitude.toFixed(6)}` : t("superAdmin.locationCoordsHint")}
+                  </p>
+                  <div className="flex gap-1">
+                    <button onClick={() => saveLocation(loc.id)} className="px-3 py-1 bg-green-600 text-white rounded text-xs">{t("superAdmin.save")}</button>
+                    <button onClick={() => setEditingId(null)} className="px-3 py-1 border rounded text-xs">{t("superAdmin.cancel")}</button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="flex-1">
+                    <span className={`font-medium ${!loc.isActive ? "text-gray-400 line-through" : ""}`}>{loc.name}</span>
+                    <div className="text-xs text-gray-500">
+                      {loc.latitude != null ? `${loc.latitude.toFixed(5)}, ${loc.longitude.toFixed(5)}` : t("superAdmin.locationNoCoords")}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => toggleActive(loc)}
+                    className={`px-2 py-1 text-xs rounded border flex-shrink-0 ${loc.isActive ? "text-green-700 border-green-300 bg-green-50" : "text-gray-400 border-gray-200"}`}
+                  >
+                    {loc.isActive ? t("superAdmin.active") : t("superAdmin.inactive")}
+                  </button>
+                  <button onClick={() => startEdit(loc)} className="px-2 py-1 border rounded text-xs hover:bg-gray-50 flex-shrink-0">{t("superAdmin.edit")}</button>
+                  <button onClick={() => deleteLocation(loc)} className="px-2 py-1 border rounded text-xs text-red-600 hover:bg-red-50 flex-shrink-0">{t("superAdmin.delete")}</button>
+                </>
+              )}
+            </div>
+
+            {expandedId === loc.id && (
+              <div className="border-t bg-gray-50 p-3">
+                <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
+                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    {t("superAdmin.assignedRaces")}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select className="border rounded p-1 text-xs" value={assignEventFilter} onChange={(e) => setAssignEventFilter(e.target.value)}>
+                      <option value="">{t("superAdmin.allEvents")}</option>
+                      {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
+                    </select>
+                    {!loadingAssignments && filteredRaces.length > 0 && (
+                      <div className="flex gap-1">
+                        <button onClick={() => selectAllRaces(loc.id)} className="px-2 py-0.5 text-xs border rounded hover:bg-gray-100">{t("superAdmin.selectAll")}</button>
+                        <button onClick={() => unselectAllRaces(loc.id)} className="px-2 py-0.5 text-xs border rounded hover:bg-gray-100">{t("superAdmin.unselectAll")}</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {loadingAssignments ? (
+                  <p className="text-xs text-gray-400">…</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-1">
+                    {filteredRaces.length === 0 && <p className="text-xs text-gray-400 col-span-2">{t("superAdmin.noRaces")}</p>}
+                    {filteredRaces.map(r => (
+                      <label key={r.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input type="checkbox" checked={assignedRaceIds?.has(r.id) ?? false} onChange={() => toggleRace(loc.id, r.id)} />
+                        {r.name}{!assignEventFilter && ` (${events.find(ev => ev.id === r.event_id)?.name || "?"})`}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+
+        {locations.length === 0 && !adding && (
+          <p className="text-center p-4 text-gray-400 text-sm">{t("superAdmin.noLocations")}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Marshals Tab ──────────────────────────────────────────────────────────
 
 function MarshalsTab({ t, marshals, races, onRefresh, actor }) {
@@ -1343,6 +1644,7 @@ export default function SuperAdminPanel() {
   const [races, setRaces] = useState([]);
   const [gear, setGear] = useState([]);
   const [marshals, setMarshals] = useState([]);
+  const [locations, setLocations] = useState([]);
   const [loadError, setLoadError] = useState("");
 
   const [reportStatus, setReportStatus] = useState(null); // null | 'sending' | 'success' | 'no-controls' | 'error'
@@ -1420,17 +1722,24 @@ export default function SuperAdminPanel() {
     setMarshals(data || []);
   };
 
+  const fetchLocations = async () => {
+    const { data, error } = await supabase.from("locations").select("id, name, latitude, longitude, isActive").order("name");
+    if (error) { setLoadError(t("superAdmin.loadError")); return; }
+    setLocations(data || []);
+  };
+
   useEffect(() => {
     if (!currentUser) return;
     fetchEvents();
     fetchRaces();
     fetchGear();
     fetchMarshals();
+    fetchLocations();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser]);
 
-  const TABS = ["events", "gear", "marshals", "logs"];
-  const tabLabel = { events: "tabEventsRaces", gear: "tabGear", marshals: "tabMarshals", logs: "tabLogs" };
+  const TABS = ["events", "gear", "marshals", "locations", "logs"];
+  const tabLabel = { events: "tabEventsRaces", gear: "tabGear", marshals: "tabMarshals", locations: "tabLocations", logs: "tabLogs" };
 
   return (
     <div className="p-4 max-w-4xl mx-auto">
@@ -1494,6 +1803,9 @@ export default function SuperAdminPanel() {
           )}
           {activeTab === "marshals" && (
             <MarshalsTab t={t} marshals={marshals} races={races} onRefresh={fetchMarshals} actor={currentUser} />
+          )}
+          {activeTab === "locations" && (
+            <LocationsTab t={t} locations={locations} races={races} events={events} onRefresh={fetchLocations} actor={currentUser} />
           )}
           {activeTab === "logs" && (
             <LogsTab t={t} />

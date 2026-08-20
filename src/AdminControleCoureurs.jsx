@@ -116,6 +116,7 @@ export default function AdminControleCoureurs() {
   const [controles, setControles] = useState([]);
   const [marshals, setMarshals] = useState({});
   const [gearOptions, setGearOptions] = useState([]);
+  const [locationsById, setLocationsById] = useState({});
 
   // Statut connexion
   const [connectionStatus, setConnectionStatus] = useState("checking"); // 'online' | 'offline' | 'checking'
@@ -170,6 +171,21 @@ export default function AdminControleCoureurs() {
       if (!error && data) setGearOptions(data);
     };
     fetchGear();
+  }, [ok]);
+
+  // Charger les points de contrôle nommés (uniquement si logué) — petite table, pas besoin
+  // de la scoper par course, on la garde entière pour résoudre n'importe quel location_id.
+  useEffect(() => {
+    if (!ok) return;
+    const fetchLocations = async () => {
+      const { data, error } = await supabase.from("locations").select("id, name");
+      if (!error && data) {
+        const mapping = {};
+        data.forEach((l) => (mapping[l.id] = l.name));
+        setLocationsById(mapping);
+      }
+    };
+    fetchLocations();
   }, [ok]);
 
   // Charger commissaires (uniquement si logué)
@@ -994,7 +1010,10 @@ export default function AdminControleCoureurs() {
                         <div className="pointer-events-none absolute z-30 hidden group-hover:block bottom-full left-0 mb-1 w-72 bg-gray-800 text-white text-xs rounded p-2 shadow-xl text-left whitespace-normal">
                           {s.history.filter(h => h.resultat === "ko").map((h, i) => (
                             <div key={h.id} className={i > 0 ? "mt-1.5 pt-1.5 border-t border-gray-600" : ""}>
-                              <div className="opacity-60 mb-0.5">{formatDate(h.created_at)} — {marshals[h.marshal_id] || "?"}</div>
+                              <div className="opacity-60 mb-0.5">
+                                {formatDate(h.created_at)} — {marshals[h.marshal_id] || "?"}
+                                {h.location_id && locationsById[h.location_id] && ` · ${locationsById[h.location_id]}`}
+                              </div>
                               <div>{h.materiel_manquant ? labelForGear(h.materiel_manquant) : "—"}</div>
                             </div>
                           ))}
@@ -1004,7 +1023,12 @@ export default function AdminControleCoureurs() {
                   </td>
                   <td className="border p-2 text-center"><CommentTooltip history={s.history} /></td>
                   <td className="border p-2"><InternalCommentCell dossard={s.dossard} current={internalComments[s.dossard] || ""} isEditing={editingDossard === s.dossard} editValue={editValue} setEditValue={setEditValue} setEditingDossard={setEditingDossard} savingDossard={savingDossard} saveInternalComment={saveInternalComment} t={t} /></td>
-                  <td className="border p-2 whitespace-nowrap">{formatDate(s.lastAt)}</td>
+                  <td className="border p-2 whitespace-nowrap">
+                    {formatDate(s.lastAt)}
+                    {s.last?.location_id && locationsById[s.last.location_id] && (
+                      <div className="text-xs text-gray-500">📍 {locationsById[s.last.location_id]}</div>
+                    )}
+                  </td>
                 </tr>
               ))}
               {filteredGroups.stillKO.length === 0 && (
@@ -1049,7 +1073,12 @@ export default function AdminControleCoureurs() {
                       </button>
                     )}
                   </td>
-                  <td className="border p-2 whitespace-nowrap">{formatDate(s.lastAt)}</td>
+                  <td className="border p-2 whitespace-nowrap">
+                    {formatDate(s.lastAt)}
+                    {s.last?.location_id && locationsById[s.last.location_id] && (
+                      <div className="text-xs text-gray-500">📍 {locationsById[s.last.location_id]}</div>
+                    )}
+                  </td>
                   <td className="border p-2">{marshals[s.lastMarshalId] || "?"}</td>
                   <td className="border p-2">{labelForGear(s.allMissingGear)}</td>
                   <td className="border p-2 text-center"><CommentTooltip history={s.history} /></td>
@@ -1103,7 +1132,12 @@ export default function AdminControleCoureurs() {
                       </button>
                     )}
                   </td>
-                  <td className="border p-2 whitespace-nowrap">{formatDate(s.lastAt)}</td>
+                  <td className="border p-2 whitespace-nowrap">
+                    {formatDate(s.lastAt)}
+                    {s.last?.location_id && locationsById[s.last.location_id] && (
+                      <div className="text-xs text-gray-500">📍 {locationsById[s.last.location_id]}</div>
+                    )}
+                  </td>
                   <td className="border p-2">{marshals[s.lastMarshalId] || "?"}</td>
                   <td className="border p-2"><InternalCommentCell dossard={s.dossard} current={internalComments[s.dossard] || ""} isEditing={editingDossard === s.dossard} editValue={editValue} setEditValue={setEditValue} setEditingDossard={setEditingDossard} savingDossard={savingDossard} saveInternalComment={saveInternalComment} t={t} /></td>
                   <td className="border p-2">
@@ -1172,6 +1206,7 @@ export default function AdminControleCoureurs() {
                       <div>{c.resultat?.toUpperCase()}</div>
                       <div>{marshals[c.marshal_id] || "?"}</div>
                       <div>{formatDate(c.created_at)}</div>
+                      {c.location_id && locationsById[c.location_id] && <div>📍 {locationsById[c.location_id]}</div>}
                     </div>
                   </Popup>
                 </CircleMarker>
