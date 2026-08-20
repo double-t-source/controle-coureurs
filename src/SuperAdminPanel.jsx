@@ -1078,7 +1078,9 @@ function LocationsTab({ t, locations, races, events, onRefresh, actor }) {
     load();
   }, [expandedId]);
 
-  const filteredRaces = assignEventFilter ? races.filter(r => r.event_id.toString() === assignEventFilter) : races;
+  // A race with no event_id (orphaned data) can't match any event filter, but must not
+  // crash the filter itself — .toString() on a null event_id previously threw here.
+  const filteredRaces = assignEventFilter ? races.filter(r => r.event_id != null && r.event_id.toString() === assignEventFilter) : races;
 
   const toggleRace = async (locationId, raceId) => {
     if (!assignedRaceIds) return;
