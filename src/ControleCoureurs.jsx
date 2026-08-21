@@ -357,6 +357,10 @@ const ControleCoureurs = () => {
     geoStatus === "requesting" ||
     geoStatus === "denied" ||
     geoStatus === "unavailable" ||
+    // "granted" with no match means there was nothing to match against (no checkpoint
+    // for this race has coordinates yet) — without this, the marshal would have no way
+    // to name the checkpoint at all.
+    (geoStatus === "granted" && !matchedLocation) ||
     manualOverride;
   const raceHasPacers = selectedRace?.has_pacers ?? false;
   // Pacers get a "P" prefix so they're distinguishable from runners with the same number.
@@ -634,7 +638,7 @@ const ControleCoureurs = () => {
             >
               {geoStatus === "idle" && t("geo.permissionInfo")}
               {geoStatus === "requesting" && t("geo.requesting")}
-              {geoStatus === "granted" && t("geo.granted")}
+              {geoStatus === "granted" && (eventInfo.race_id ? t("geo.noMatchSelectManually") : t("geo.granted"))}
               {geoStatus === "matched" && matchedLocation && (
                 <div className="flex items-center justify-between gap-2">
                   <span>📍 {t("geo.matchedAt", { name: matchedLocation.location.name })}</span>

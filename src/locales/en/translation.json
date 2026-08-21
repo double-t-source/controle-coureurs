@@ -37,6 +37,7 @@
     "mandatoryBlocked": "Location is mandatory for this event. Allow it to continue.",
     "requesting": "Getting location...",
     "granted": "✅ Location enabled",
+    "noMatchSelectManually": "✅ Location enabled — no known checkpoint nearby, please select one from the list.",
     "unavailable": "Geolocation is not available on this device.",
     "matchedAt": "Located at \"{{name}}\"",
     "suggestedAt": "Nearest checkpoint: \"{{name}}\" (~{{distance}} m, outside the usual zone)",

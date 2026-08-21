@@ -37,6 +37,7 @@
     "mandatoryBlocked": "La localisation est obligatoire pour cet évènement. Autorisez-la pour continuer.",
     "requesting": "Récupération de la position...",
     "granted": "✅ Localisation activée",
+    "noMatchSelectManually": "✅ Localisation activée — aucun point de contrôle connu à proximité, sélectionnez-le dans la liste.",
     "unavailable": "Localisation non disponible sur cet appareil.",
     "matchedAt": "Géolocalisé à « {{name}} »",
     "suggestedAt": "Lieu le plus proche : « {{name}} » (~{{distance}} m, hors zone habituelle)",
