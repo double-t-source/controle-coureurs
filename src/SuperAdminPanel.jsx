@@ -1013,20 +1013,40 @@ const DEFAULT_MAP_CENTER = [45.92, 6.87];
 // truncating, so the whole route shape is preserved instead of being cut off partway.
 const MAX_GPX_POINTS = 1500;
 
-function parseGpxTrack(xmlText) {
-  const doc = new DOMParser().parseFromString(xmlText, "application/xml");
-  if (doc.querySelector("parsererror")) return [];
-  let points = [...doc.querySelectorAll("trkpt")];
-  if (points.length === 0) points = [...doc.querySelectorAll("rtept")];
-  const coords = points
-    .map((pt) => [parseFloat(pt.getAttribute("lat")), parseFloat(pt.getAttribute("lon"))])
-    .filter(([lat, lon]) => Number.isFinite(lat) && Number.isFinite(lon));
+function downsampleTrack(coords) {
   if (coords.length <= MAX_GPX_POINTS) return coords;
   const stride = coords.length / MAX_GPX_POINTS;
   const sampled = [];
   for (let i = 0; i < MAX_GPX_POINTS; i++) sampled.push(coords[Math.floor(i * stride)]);
   sampled.push(coords[coords.length - 1]);
   return sampled;
+}
+
+// A GPX exported from checkpoint-planning tools typically carries both a <trk> (the route,
+// as many trkpt) and named <wpt> (the checkpoints themselves) — parse both in one pass so
+// the upload can draw the route AND offer to auto-create the named waypoints as locations.
+function parseGpxFile(xmlText) {
+  const doc = new DOMParser().parseFromString(xmlText, "application/xml");
+  if (doc.querySelector("parsererror")) return { track: [], waypoints: [] };
+
+  let trackPoints = [...doc.querySelectorAll("trkpt")];
+  if (trackPoints.length === 0) trackPoints = [...doc.querySelectorAll("rtept")];
+  const track = downsampleTrack(
+    trackPoints
+      .map((pt) => [parseFloat(pt.getAttribute("lat")), parseFloat(pt.getAttribute("lon"))])
+      .filter(([lat, lon]) => Number.isFinite(lat) && Number.isFinite(lon))
+  );
+
+  const waypoints = [...doc.querySelectorAll("wpt")]
+    .map((pt) => {
+      const lat = parseFloat(pt.getAttribute("lat"));
+      const lon = parseFloat(pt.getAttribute("lon"));
+      const name = pt.querySelector("name")?.textContent?.trim() || "";
+      return { name, lat, lon };
+    })
+    .filter((w) => w.name && Number.isFinite(w.lat) && Number.isFinite(w.lon));
+
+  return { track, waypoints };
 }
 
 // Placing a point is click-to-set rather than drag-a-pin: CircleMarker (already used
@@ -1073,6 +1093,11 @@ function LocationsTab({ t, locations, races, events, onRefresh, actor }) {
   const [previewTrack, setPreviewTrack] = useState(null);
   const [gpxStatus, setGpxStatus] = useState(null); // null | 'parsing' | 'saving' | 'error'
 
+  // Checkpoints detected as named <wpt> in the uploaded GPX, awaiting review before they're
+  // turned into locations. Each: { name, lat, lon, selected, existingId (reuse) | null (create) }.
+  const [importCandidates, setImportCandidates] = useState([]);
+  const [importStatus, setImportStatus] = useState(null); // null | 'importing' | 'done'
+
   const fetchAllAssignments = async () => {
     const { data } = await supabase.from("race_locations").select("race_id, location_id");
     setAllAssignments(data || []);
@@ -1096,6 +1121,8 @@ function LocationsTab({ t, locations, races, events, onRefresh, actor }) {
     setGpxStatus(null);
     setAdding(false);
     setEditingId(null);
+    setImportCandidates([]);
+    setImportStatus(null);
   }, [selectedEventId]);
 
   const saveGeoRadius = async () => {
@@ -1183,6 +1210,8 @@ function LocationsTab({ t, locations, races, events, onRefresh, actor }) {
     setPreviewRaceId(raceId);
     setPreviewTrack(null);
     setGpxStatus(null);
+    setImportCandidates([]);
+    setImportStatus(null);
     if (!raceId) return;
     const { data } = await supabase.from("races").select("gpx_track").eq("id", raceId).single();
     if (data?.gpx_track) setPreviewTrack(data.gpx_track);
@@ -1193,17 +1222,29 @@ function LocationsTab({ t, locations, races, events, onRefresh, actor }) {
     e.target.value = "";
     if (!file || !previewRaceId) return;
     setGpxStatus("parsing");
+    setImportCandidates([]);
+    setImportStatus(null);
     try {
       const text = await file.text();
-      const points = parseGpxTrack(text);
-      if (points.length === 0) { setGpxStatus("error"); return; }
-      setGpxStatus("saving");
-      const { error: err } = await supabase.from("races").update({ gpx_track: points }).eq("id", previewRaceId);
-      if (err) { setGpxStatus("error"); return; }
-      setPreviewTrack(points);
+      const { track, waypoints } = parseGpxFile(text);
+      if (track.length === 0 && waypoints.length === 0) { setGpxStatus("error"); return; }
+
+      if (track.length > 0) {
+        setGpxStatus("saving");
+        const { error: err } = await supabase.from("races").update({ gpx_track: track }).eq("id", previewRaceId);
+        if (err) { setGpxStatus("error"); return; }
+        setPreviewTrack(track);
+        const race = races.find(r => r.id.toString() === previewRaceId);
+        logActivity({ action: "race.gpx_uploaded", entityType: "race", entityId: parseInt(previewRaceId, 10), description: `Trace GPX importée pour "${race?.name}" (${track.length} points)`, actor });
+      }
       setGpxStatus(null);
-      const race = races.find(r => r.id.toString() === previewRaceId);
-      logActivity({ action: "race.gpx_uploaded", entityType: "race", entityId: parseInt(previewRaceId, 10), description: `Trace GPX importée pour "${race?.name}" (${points.length} points)`, actor });
+
+      if (waypoints.length > 0) {
+        setImportCandidates(waypoints.map((w) => {
+          const existing = locations.find(l => l.name.trim().toLowerCase() === w.name.toLowerCase());
+          return { name: w.name, lat: w.lat, lon: w.lon, selected: true, existingId: existing?.id ?? null };
+        }));
+      }
     } catch {
       setGpxStatus("error");
     }
@@ -1215,6 +1256,38 @@ function LocationsTab({ t, locations, races, events, onRefresh, actor }) {
     setPreviewTrack(null);
     const race = races.find(r => r.id.toString() === previewRaceId);
     logActivity({ action: "race.gpx_cleared", entityType: "race", entityId: parseInt(previewRaceId, 10), description: `Trace GPX supprimée pour "${race?.name}"`, actor });
+  };
+
+  const toggleImportCandidate = (index) => {
+    setImportCandidates(prev => prev.map((c, i) => i === index ? { ...c, selected: !c.selected } : c));
+  };
+
+  const importSelectedCheckpoints = async () => {
+    const selected = importCandidates.filter(c => c.selected);
+    if (selected.length === 0 || !previewRaceId) return;
+    setImportStatus("importing");
+    const raceId = parseInt(previewRaceId, 10);
+    const race = races.find(r => r.id === raceId);
+
+    for (const c of selected) {
+      let locationId = c.existingId;
+      if (!locationId) {
+        const { data: inserted, error: err } = await supabase.from("locations").insert({
+          name: c.name, latitude: c.lat, longitude: c.lon, isActive: true,
+        }).select("id").single();
+        if (err || !inserted) continue;
+        locationId = inserted.id;
+        logActivity({ action: "location.created", entityType: "location", entityId: locationId, description: `Point de contrôle créé depuis GPX : "${c.name}"`, actor });
+      }
+      await supabase.from("race_locations").upsert({ race_id: raceId, location_id: locationId }, { onConflict: "race_id,location_id" });
+    }
+
+    logActivity({ action: "location.gpx_imported", entityType: "race", entityId: raceId, description: `${selected.length} point(s) de contrôle importé(s) depuis GPX pour "${race?.name}"`, actor });
+    setImportCandidates([]);
+    setImportStatus("done");
+    onRefresh();
+    fetchAllAssignments();
+    setTimeout(() => setImportStatus(null), 2500);
   };
 
   const startEdit = (loc) => {
@@ -1329,6 +1402,36 @@ function LocationsTab({ t, locations, races, events, onRefresh, actor }) {
             {gpxStatus === "error" && <span className="text-xs text-red-600">{t("superAdmin.gpxError")}</span>}
             {previewTrack && <span className="text-xs text-green-700">{t("superAdmin.gpxPointCount", { count: previewTrack.length })}</span>}
           </div>
+
+          {importCandidates.length > 0 && (
+            <div className="border rounded p-3 mb-4 bg-amber-50 border-amber-200">
+              <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
+                <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                  {t("superAdmin.gpxWaypointsFound", { count: importCandidates.length })}
+                </div>
+                <button
+                  onClick={importSelectedCheckpoints}
+                  disabled={importStatus === "importing" || importCandidates.every(c => !c.selected)}
+                  className="px-3 py-1 bg-amber-600 text-white rounded text-xs disabled:opacity-50"
+                >
+                  {importStatus === "importing" ? t("superAdmin.gpxImporting") : t("superAdmin.gpxImportSelected")}
+                </button>
+              </div>
+              {importStatus === "done" && <p className="text-xs text-green-700 mb-2">{t("superAdmin.gpxImportDone")}</p>}
+              <div className="space-y-1">
+                {importCandidates.map((c, i) => (
+                  <label key={i} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input type="checkbox" checked={c.selected} onChange={() => toggleImportCandidate(i)} />
+                    <span className="flex-1">{c.name}</span>
+                    <span className="text-xs text-gray-400">{c.lat.toFixed(5)}, {c.lon.toFixed(5)}</span>
+                    <span className={`text-xs ${c.existingId ? "text-blue-600" : "text-gray-500"}`}>
+                      {c.existingId ? t("superAdmin.gpxWillReuse") : t("superAdmin.gpxWillCreate")}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
 
           {error && <p className="text-xs text-red-600 mb-3">{error}</p>}
 
