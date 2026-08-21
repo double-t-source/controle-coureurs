@@ -1093,8 +1093,11 @@ function LocationsTab({ t, locations, races, events, onRefresh, actor }) {
   const [previewTrack, setPreviewTrack] = useState(null);
   const [gpxStatus, setGpxStatus] = useState(null); // null | 'parsing' | 'saving' | 'error'
 
-  // Checkpoints detected as named <wpt> in the uploaded GPX, awaiting review before they're
-  // turned into locations. Each: { name, lat, lon, selected, existingId (reuse) | null (create) }.
+  // Named <wpt> extracted from the last uploaded GPX, held here until the admin explicitly
+  // asks to parse them (rather than surfacing them automatically on every upload).
+  const [pendingWaypoints, setPendingWaypoints] = useState(null);
+  // Waypoints turned into a review list, awaiting selection before they're turned into
+  // locations. Each: { name, lat, lon, selected, existingId (reuse) | null (create) }.
   const [importCandidates, setImportCandidates] = useState([]);
   const [importStatus, setImportStatus] = useState(null); // null | 'importing' | 'done'
 
@@ -1121,6 +1124,7 @@ function LocationsTab({ t, locations, races, events, onRefresh, actor }) {
     setGpxStatus(null);
     setAdding(false);
     setEditingId(null);
+    setPendingWaypoints(null);
     setImportCandidates([]);
     setImportStatus(null);
   }, [selectedEventId]);
@@ -1210,6 +1214,7 @@ function LocationsTab({ t, locations, races, events, onRefresh, actor }) {
     setPreviewRaceId(raceId);
     setPreviewTrack(null);
     setGpxStatus(null);
+    setPendingWaypoints(null);
     setImportCandidates([]);
     setImportStatus(null);
     if (!raceId) return;
@@ -1222,6 +1227,7 @@ function LocationsTab({ t, locations, races, events, onRefresh, actor }) {
     e.target.value = "";
     if (!file || !previewRaceId) return;
     setGpxStatus("parsing");
+    setPendingWaypoints(null);
     setImportCandidates([]);
     setImportStatus(null);
     try {
@@ -1239,15 +1245,20 @@ function LocationsTab({ t, locations, races, events, onRefresh, actor }) {
       }
       setGpxStatus(null);
 
-      if (waypoints.length > 0) {
-        setImportCandidates(waypoints.map((w) => {
-          const existing = locations.find(l => l.name.trim().toLowerCase() === w.name.toLowerCase());
-          return { name: w.name, lat: w.lat, lon: w.lon, selected: true, existingId: existing?.id ?? null };
-        }));
-      }
+      // Waypoints are held aside rather than reviewed automatically — parsing them into
+      // the candidate list only happens when the admin clicks "Parse waypoints".
+      if (waypoints.length > 0) setPendingWaypoints(waypoints);
     } catch {
       setGpxStatus("error");
     }
+  };
+
+  const parseWaypoints = () => {
+    if (!pendingWaypoints) return;
+    setImportCandidates(pendingWaypoints.map((w) => {
+      const existing = locations.find(l => l.name.trim().toLowerCase() === w.name.toLowerCase());
+      return { name: w.name, lat: w.lat, lon: w.lon, selected: true, existingId: existing?.id ?? null };
+    }));
   };
 
   const clearGpxTrack = async () => {
@@ -1394,6 +1405,11 @@ function LocationsTab({ t, locations, races, events, onRefresh, actor }) {
                 {previewTrack && (
                   <button onClick={clearGpxTrack} className="px-2 py-1 border rounded text-xs text-red-600 hover:bg-red-50">
                     {t("superAdmin.gpxClear")}
+                  </button>
+                )}
+                {pendingWaypoints && (
+                  <button onClick={parseWaypoints} className="px-2 py-1 bg-amber-600 text-white rounded text-xs hover:bg-amber-700">
+                    {t("superAdmin.gpxParseWaypoints", { count: pendingWaypoints.length })}
                   </button>
                 )}
               </>

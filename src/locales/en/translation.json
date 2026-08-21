@@ -218,6 +218,7 @@
     "gpxParsing": "Reading file...",
     "gpxError": "Invalid GPX file.",
     "gpxPointCount": "{{count}} points",
+    "gpxParseWaypoints": "Parse waypoints ({{count}})",
     "gpxWaypointsFound": "{{count}} checkpoint(s) detected in the GPX",
     "gpxImportSelected": "Import selection",
     "gpxImporting": "Importing...",

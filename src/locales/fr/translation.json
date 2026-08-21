@@ -218,6 +218,7 @@
     "gpxParsing": "Lecture du fichier...",
     "gpxError": "Fichier GPX invalide.",
     "gpxPointCount": "{{count}} points",
+    "gpxParseWaypoints": "Parser les points ({{count}})",
     "gpxWaypointsFound": "{{count}} point(s) de contrôle détecté(s) dans le GPX",
     "gpxImportSelected": "Importer la sélection",
     "gpxImporting": "Import en cours...",
