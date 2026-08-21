@@ -420,13 +420,14 @@ export default function AdminControleCoureurs() {
 
     autoTable(doc, {
       startY: 50,
-      head: [[t("admin.pdfBib"), t("admin.pdfResult"), t("admin.pdfMissingGear"), t("admin.pdfComment"), t("admin.pdfMarshal"), t("admin.pdfDateTime")]],
+      head: [[t("admin.pdfBib"), t("admin.pdfResult"), t("admin.pdfMissingGear"), t("admin.pdfComment"), t("admin.pdfMarshal"), t("admin.pdfLocation"), t("admin.pdfDateTime")]],
       body: controles.map((c) => [
         c.dossard,
         c.resultat?.toUpperCase() || "-",
         labelForGear(c.materiel_manquant),
         c.commentaire || "-",
         marshals[c.marshal_id] || "?",
+        (c.location_id && locationsById[c.location_id]) || "-",
         formatDate(c.created_at),
       ]),
       styles: { fontSize: 9 },
@@ -1025,8 +1026,10 @@ export default function AdminControleCoureurs() {
                   <td className="border p-2"><InternalCommentCell dossard={s.dossard} current={internalComments[s.dossard] || ""} isEditing={editingDossard === s.dossard} editValue={editValue} setEditValue={setEditValue} setEditingDossard={setEditingDossard} savingDossard={savingDossard} saveInternalComment={saveInternalComment} t={t} /></td>
                   <td className="border p-2 whitespace-nowrap">
                     {formatDate(s.lastAt)}
-                    {s.last?.location_id && locationsById[s.last.location_id] && (
+                    {s.last?.location_id && locationsById[s.last.location_id] ? (
                       <div className="text-xs text-gray-500">📍 {locationsById[s.last.location_id]}</div>
+                    ) : (
+                      <div className="text-xs text-gray-300 italic">{t("admin.noLocationRecorded")}</div>
                     )}
                   </td>
                 </tr>
@@ -1075,8 +1078,10 @@ export default function AdminControleCoureurs() {
                   </td>
                   <td className="border p-2 whitespace-nowrap">
                     {formatDate(s.lastAt)}
-                    {s.last?.location_id && locationsById[s.last.location_id] && (
+                    {s.last?.location_id && locationsById[s.last.location_id] ? (
                       <div className="text-xs text-gray-500">📍 {locationsById[s.last.location_id]}</div>
+                    ) : (
+                      <div className="text-xs text-gray-300 italic">{t("admin.noLocationRecorded")}</div>
                     )}
                   </td>
                   <td className="border p-2">{marshals[s.lastMarshalId] || "?"}</td>
@@ -1134,8 +1139,10 @@ export default function AdminControleCoureurs() {
                   </td>
                   <td className="border p-2 whitespace-nowrap">
                     {formatDate(s.lastAt)}
-                    {s.last?.location_id && locationsById[s.last.location_id] && (
+                    {s.last?.location_id && locationsById[s.last.location_id] ? (
                       <div className="text-xs text-gray-500">📍 {locationsById[s.last.location_id]}</div>
+                    ) : (
+                      <div className="text-xs text-gray-300 italic">{t("admin.noLocationRecorded")}</div>
                     )}
                   </td>
                   <td className="border p-2">{marshals[s.lastMarshalId] || "?"}</td>

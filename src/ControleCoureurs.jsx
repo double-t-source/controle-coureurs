@@ -77,6 +77,16 @@ const ControleCoureurs = () => {
   const [matchedLocation, setMatchedLocation] = useState(null); // { location, distance }
   const [manualOverride, setManualOverride] = useState(false);
 
+  // A bib can legitimately be checked again at a different checkpoint further along the
+  // course — only flag it as a duplicate when re-entered at the same location. Works the
+  // same whether that location came from auto-match or a manual pick (geoloc off/denied),
+  // since both write into selectedLocation; "no location chosen" is its own bucket so the
+  // comparison still means something before a location resolves.
+  const findDuplicateHere = (dossard) => {
+    const here = selectedLocation ? parseInt(selectedLocation, 10) : null;
+    return dossardsControles.find((c) => c.dossard === dossard && (c.location_id ?? null) === here);
+  };
+
   // Initial fetch
   useEffect(() => {
     const fetchEvents = async () => {
@@ -274,10 +284,9 @@ const ControleCoureurs = () => {
   useEffect(() => {
     if (!form.dossard) return;
     const effective = isPacer ? "P" + form.dossard : form.dossard;
-    const found = dossardsControles.find((c) => c.dossard === effective);
-    setDuplicateInfo(found || null);
+    setDuplicateInfo(findDuplicateHere(effective) || null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPacer]);
+  }, [isPacer, selectedLocation]);
 
   useEffect(() => {
     if (step === 2 && dossardRef.current) dossardRef.current.focus();
@@ -327,8 +336,7 @@ const ControleCoureurs = () => {
 
     if (name === "dossard") {
       const effective = isPacer ? "P" + value : value;
-      const found = value ? dossardsControles.find((c) => c.dossard === effective) : null;
-      setDuplicateInfo(found || null);
+      setDuplicateInfo(value ? findDuplicateHere(effective) || null : null);
     }
     if (name === "commentaire" && value.trim()) {
       setKoError(false);
@@ -508,7 +516,7 @@ const ControleCoureurs = () => {
       return;
     }
 
-    const isDuplicate = dossardsControles.map((dc) => dc.dossard).includes(effectiveDossard);
+    const isDuplicate = !!findDuplicateHere(effectiveDossard);
     if (isDuplicate && !window.confirm(t("dupConfirm"))) return;
 
     // Position is captured once per race session (see the race_id effect / relocate()),
